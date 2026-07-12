@@ -1,26 +1,71 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* IPU One — Wine Red + Gold Design Tokens */
+  --color-primary: #7A0C0C;
+  --color-primary-light: #a01010;
+  --color-primary-faint: rgba(122, 12, 12, 0.06);
+  --color-gold: #C8A951;
+  --color-gold-faint: rgba(200, 169, 81, 0.10);
+  --color-surface: #ffffff;
+  --color-border: #e8e5e0;
+  --color-muted: #7a7570;
+  --color-danger: #c0392b;
+  --color-danger-faint: rgba(192, 57, 43, 0.08);
+  --color-success: #27ae60;
+  --color-success-faint: rgba(39, 174, 96, 0.08);
+  --color-info: #2980b9;
+  --color-info-faint: rgba(41, 128, 185, 0.08);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  --background: #F8F7F5;
+  --foreground: #1A1A1A;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d4d0cc; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #b0aca8; }
+
+/* ===== Multi-select Dropdown ===== */
+.dropdown-enter { animation: dropdown-in 0.15s ease-out; }
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ===== Toast animation ===== */
+.toast-enter { animation: toast-in 0.3s ease-out; }
+.toast-exit { animation: toast-out 0.25s ease-in forwards; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(12px); }
+}
+
+/* ===== Skeleton loader ===== */
+.skeleton {
+  background: linear-gradient(90deg, #f0efed 25%, #e8e6e3 50%, #f0efed 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
