@@ -51,14 +51,36 @@ export interface StudentProfile {
   admissionYear: number | null;
   programCode: string | null;
   programName: string | null;
+  courseShortName: string | null;
   instituteCode: string | null;
   instituteName: string | null;
+  // null = unknown (that course's total semester count hasn't been set yet)
+  passedOut: boolean | null;
   gender: string | null;
   fatherName: string | null;
   motherName: string | null;
   contactNumber: string | null;
   email: string | null;
   profileImage: string | null;
+}
+
+// ===== Course types =====
+export interface Course {
+  programCode: string;
+  programName: string;
+  shortName: string | null;
+  instituteCode: string | null;
+  instituteName: string | null;
+  totalSemesters: number | null;
+  confirmed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseUpdate {
+  shortName?: string | null;
+  totalSemesters?: number | null;
+  confirmed?: boolean;
 }
 
 // ===== Enum constants (matching backend) =====
@@ -126,5 +148,21 @@ export interface DocumentResponse {
 export async function fetchDocuments(): Promise<DocumentResponse[]> {
   const res = await fetch(`${API_BASE}/api/admin/documents`);
   if (!res.ok) throw new Error(`Failed to fetch documents: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCourses(): Promise<Course[]> {
+  const res = await fetch(`${API_BASE}/api/admin/courses`);
+  if (!res.ok) throw new Error(`Failed to fetch courses: ${res.status}`);
+  return res.json();
+}
+
+export async function updateCourse(programCode: string, update: CourseUpdate): Promise<Course> {
+  const res = await fetch(`${API_BASE}/api/admin/courses/${encodeURIComponent(programCode)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  if (!res.ok) throw new Error(`Failed to update course: ${res.status}`);
   return res.json();
 }

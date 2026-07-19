@@ -108,6 +108,7 @@ export default function StudentsPage() {
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Program</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Institute</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Batch</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Status</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Email</th>
                 </tr>
               </thead>
@@ -120,7 +121,7 @@ export default function StudentsPage() {
                     </td>
                     <td className="px-4 py-3 font-mono text-[13px]">{s.enrollmentNo}</td>
                     <td className="px-4 py-3">
-                      <div>{s.programName || "—"}</div>
+                      <div>{s.courseShortName || s.programName || "—"}</div>
                       {s.programCode && <div className="text-[11px] text-muted mt-0.5">Code: {s.programCode}</div>}
                     </td>
                     <td className="px-4 py-3">
@@ -128,6 +129,21 @@ export default function StudentsPage() {
                       {s.instituteCode && <div className="text-[11px] text-muted mt-0.5">Code: {s.instituteCode}</div>}
                     </td>
                     <td className="px-4 py-3">{s.batchYear || "—"}</td>
+                    <td className="px-4 py-3">
+                      {s.passedOut === true ? (
+                        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold bg-green-100 text-green-700">
+                          Pass Out
+                        </span>
+                      ) : s.passedOut === false ? (
+                        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold bg-primary-faint text-primary">
+                          Enrolled
+                        </span>
+                      ) : (
+                        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500">
+                          Unknown
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-[13px]">{s.email || "—"}</td>
                   </tr>
                 ))}
