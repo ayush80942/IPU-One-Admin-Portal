@@ -1,4 +1,7 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
+// NEXT_PUBLIC_* vars are inlined into the client bundle at build time, not read at
+// runtime — this must be set (and marked available at build time) before `next build`
+// runs, or the app silently falls back to localhost in production.
+export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080").replace(/\/+$/, "");
 
 export function resolveFileUrl(fileUrl: string): string {
   return fileUrl.startsWith("http") ? fileUrl : `${API_BASE}${fileUrl}`;
