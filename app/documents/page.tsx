@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "../components/Toast";
-import { fetchDocuments, DocumentResponse } from "../lib/api";
+import { fetchDocuments, resolveFileUrl, DocumentResponse } from "../lib/api";
 
 export default function DocumentCollectionPage() {
   const { toast } = useToast();
@@ -85,8 +85,8 @@ export default function DocumentCollectionPage() {
                       {d.nocDuration && <div>Duration: {d.nocDuration}</div>}
                     </td>
                     <td className="px-4 py-3">
-                      <button 
-                        onClick={() => setSelectedImage(d.imageBase64)}
+                      <button
+                        onClick={() => setSelectedImage(resolveFileUrl(d.fileUrl))}
                         className="text-primary hover:underline font-medium text-[12px]"
                       >
                         View Image

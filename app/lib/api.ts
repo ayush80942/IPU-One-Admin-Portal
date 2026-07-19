@@ -1,4 +1,8 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
+
+export function resolveFileUrl(fileUrl: string): string {
+  return fileUrl.startsWith("http") ? fileUrl : `${API_BASE}${fileUrl}`;
+}
 
 // ===== Notice types =====
 export interface NoticeResponse {
@@ -114,7 +118,7 @@ export interface DocumentResponse {
   semester: string | null;
   examType: string | null;
   nocDuration: string | null;
-  imageBase64: string;
+  fileUrl: string;
   submittedAt: string;
   updatedAt: string;
 }
