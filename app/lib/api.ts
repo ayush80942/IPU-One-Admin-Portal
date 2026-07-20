@@ -1,3 +1,5 @@
+import type { NoticeBadgeValue, NoticeCategoryValue } from "./noticeTaxonomy";
+
 // NEXT_PUBLIC_* vars are inlined into the client bundle at build time, not read at
 // runtime — this must be set (and marked available at build time) before `next build`
 // runs, or the app silently falls back to localhost in production.
@@ -10,8 +12,8 @@ export function resolveFileUrl(fileUrl: string): string {
 // ===== Notice types =====
 export interface NoticeResponse {
   id: number;
-  category: string;
-  badge: string | null;
+  category: NoticeCategoryValue;
+  badge: NoticeBadgeValue | null;
   title: string;
   description: string;
   actionText: string;
@@ -25,8 +27,8 @@ export interface NoticeResponse {
 }
 
 export interface NoticeRequest {
-  category: string;
-  badge: string | null;
+  category: NoticeCategoryValue;
+  badge: NoticeBadgeValue | null;
   title: string;
   description: string;
   actionText: string;
@@ -86,26 +88,17 @@ export interface CourseUpdate {
   confirmed?: boolean;
 }
 
-// ===== Enum constants (matching backend) =====
-export const CATEGORIES = [
-  { value: "EXAM", label: "Exam" },
-  { value: "SCHOLARSHIP", label: "Scholarship" },
-  { value: "INTERNSHIP", label: "Internship" },
-  { value: "CIRCULAR", label: "Circular" },
-  { value: "PLACEMENT", label: "Placement" },
-] as const;
-
-export const BADGES = [
-  { value: "URGENT", label: "Urgent" },
-  { value: "NEW", label: "New" },
-] as const;
-
 // ===== API functions =====
 export async function fetchNotices(
   page = 0,
-  size = 100
+  size = 100,
+  category?: string,
+  search?: string
 ): Promise<PageResponse<NoticeResponse>> {
-  const res = await fetch(`${API_BASE}/api/notices?page=${page}&size=${size}`);
+  const params = new URLSearchParams({ page: String(page), size: String(size) });
+  if (category) params.set("category", category);
+  if (search) params.set("search", search);
+  const res = await fetch(`${API_BASE}/api/notices?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch notices: ${res.status}`);
   return res.json();
 }

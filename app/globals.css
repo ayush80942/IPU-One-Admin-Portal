@@ -21,6 +21,16 @@
   --color-success-faint: rgba(39, 174, 96, 0.08);
   --color-info: #2980b9;
   --color-info-faint: rgba(41, 128, 185, 0.08);
+
+  /* Notice category tags — kept distinct from danger/success (reserved for badges) */
+  --color-teal: #0a9d94;
+  --color-teal-faint: rgba(10, 157, 148, 0.08);
+  --color-orange: #d9731e;
+  --color-orange-faint: rgba(217, 115, 30, 0.08);
+  --color-violet: #6b3fa0;
+  --color-violet-faint: rgba(107, 63, 160, 0.08);
+  --color-magenta: #c94f8f;
+  --color-magenta-faint: rgba(201, 79, 143, 0.08);
 }
 
 :root {
