@@ -1,13 +1,19 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { GraduationCap } from "lucide-react";
 import { useToast } from "../components/Toast";
+import PageHeader from "../components/PageHeader";
+import StatTile from "../components/StatTile";
+import EmptyState from "../components/EmptyState";
+import DetailDialog, { DetailField } from "../components/DetailDialog";
 import { fetchCourses, updateCourse, Course } from "../lib/api";
 
 export default function CoursesPage() {
   const { toast } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<Course | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -27,21 +33,14 @@ export default function CoursesPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-primary">Courses</h1>
-      <p className="text-[14px] text-muted mt-1 mb-7">
-        Program duration is guessed automatically from the degree name on first import — review and correct it here.
-        This drives each student&apos;s &quot;Pass Out&quot; status.
-      </p>
+      <PageHeader
+        title="Courses"
+        subtitle={`Program duration is guessed automatically from the degree name on first import — review and correct it here. This drives each student's "Pass Out" status.`}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-surface border border-border rounded-2xl p-5 shadow-sm">
-          <div className="text-3xl font-extrabold text-primary">{courses.length}</div>
-          <div className="text-[13px] text-muted mt-1">Total Courses</div>
-        </div>
-        <div className="bg-surface border border-border rounded-2xl p-5 shadow-sm">
-          <div className="text-3xl font-extrabold text-primary">{unconfirmedCount}</div>
-          <div className="text-[13px] text-muted mt-1">Awaiting Review</div>
-        </div>
+        <StatTile value={courses.length} label="Total Courses" icon={GraduationCap} />
+        <StatTile value={unconfirmedCount} label="Awaiting Review" color="danger" />
       </div>
 
       <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
@@ -59,9 +58,7 @@ export default function CoursesPage() {
             ))}
           </div>
         ) : courses.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-muted text-[14px]">No courses yet — they&apos;re created automatically as students import results.</p>
-          </div>
+          <EmptyState icon={GraduationCap} message="No courses yet — they're created automatically as students import results." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[13.5px]">
@@ -80,6 +77,7 @@ export default function CoursesPage() {
                   <CourseRow
                     key={course.programCode}
                     course={course}
+                    onExpand={setSelected}
                     onSaved={(updated) =>
                       setCourses((prev) => prev.map((c) => (c.programCode === updated.programCode ? updated : c)))
                     }
@@ -90,11 +88,37 @@ export default function CoursesPage() {
           </div>
         )}
       </div>
+
+      {selected && (
+        <DetailDialog
+          title={selected.programName}
+          subtitle={`Code: ${selected.programCode}`}
+          onClose={() => setSelected(null)}
+        >
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+            <DetailField label="Institute" value={selected.instituteName} />
+            <DetailField label="Institute Code" value={selected.instituteCode} />
+            <DetailField label="Short Name" value={selected.shortName} />
+            <DetailField label="Total Semesters" value={selected.totalSemesters} />
+            <DetailField label="Reviewed" value={selected.confirmed ? "Yes" : "No"} />
+            <DetailField label="Created" value={new Date(selected.createdAt).toLocaleString()} />
+            <DetailField label="Last Updated" value={new Date(selected.updatedAt).toLocaleString()} />
+          </div>
+        </DetailDialog>
+      )}
     </div>
   );
 }
 
-function CourseRow({ course, onSaved }: { course: Course; onSaved: (updated: Course) => void }) {
+function CourseRow({
+  course,
+  onExpand,
+  onSaved,
+}: {
+  course: Course;
+  onExpand: (course: Course) => void;
+  onSaved: (updated: Course) => void;
+}) {
   const { toast } = useToast();
   const [shortName, setShortName] = useState(course.shortName ?? "");
   const [totalSemesters, setTotalSemesters] = useState(course.totalSemesters?.toString() ?? "");
@@ -125,8 +149,11 @@ function CourseRow({ course, onSaved }: { course: Course; onSaved: (updated: Cou
 
   return (
     <tr className="hover:bg-background transition-colors border-b border-border last:border-b-0">
-      <td className="px-4 py-3">
-        <div className="font-semibold">{course.programName}</div>
+      <td
+        className="px-4 py-3 cursor-pointer group"
+        onClick={() => onExpand(course)}
+      >
+        <div className="font-semibold group-hover:text-primary group-hover:underline">{course.programName}</div>
         <div className="text-[11px] text-muted mt-0.5">Code: {course.programCode}</div>
       </td>
       <td className="px-4 py-3 text-[12px] text-muted">{course.instituteName || "—"}</td>

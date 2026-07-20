@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "IPU One — Student Cell Portal",
-  description: "Administrative dashboard for the IPU One notice system. Publish, manage notices and view registered students.",
+  description: "Administrative dashboard for IPU One — publish notices, review student documents, and manage registered students and courses.",
 };
 
 export default function RootLayout({

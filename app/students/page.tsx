@@ -1,14 +1,27 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { Search, Users } from "lucide-react";
 import { useToast } from "../components/Toast";
+import PageHeader from "../components/PageHeader";
+import StatTile from "../components/StatTile";
+import EmptyState from "../components/EmptyState";
+import Pill from "../components/Pill";
+import DetailDialog, { DetailField } from "../components/DetailDialog";
 import { fetchStudents, StudentProfile } from "../lib/api";
+
+function statusPill(passedOut: boolean | null) {
+  if (passedOut === true) return <Pill color="text-success" colorFaint="bg-success-faint">Pass Out</Pill>;
+  if (passedOut === false) return <Pill color="text-primary" colorFaint="bg-primary-faint">Enrolled</Pill>;
+  return <Pill color="text-muted" colorFaint="bg-background">Unknown</Pill>;
+}
 
 export default function StudentsPage() {
   const { toast } = useToast();
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<StudentProfile | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -39,27 +52,14 @@ export default function StudentsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-primary">Registered Students</h1>
-      <p className="text-[14px] text-muted mt-1 mb-7">All students who have linked their IPU portal account.</p>
+      <PageHeader title="Students" subtitle="All students who have linked their IPU portal account." />
 
       {/* Stats + Search */}
       <div className="flex items-center justify-between mb-6 gap-4">
-        <div className="bg-surface border border-border rounded-2xl px-5 py-4 shadow-sm">
-          <span className="text-2xl font-extrabold text-primary">{students.length}</span>
-          <span className="text-[13px] text-muted ml-2">Students Registered</span>
-        </div>
+        <StatTile value={students.length} label="Students Registered" icon={Users} />
 
         <div className="relative flex-1 max-w-sm">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.35-4.35" />
-          </svg>
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
           <input
             type="text"
             value={search}
@@ -89,15 +89,10 @@ export default function StudentsPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-16 text-center">
-            <svg className="w-12 h-12 mx-auto mb-3 text-muted/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-            </svg>
-            <p className="text-muted text-[14px]">
-              {search.trim() ? "No students match your search." : "No students registered yet."}
-            </p>
-          </div>
+          <EmptyState
+            icon={Users}
+            message={search.trim() ? "No students match your search." : "No students registered yet."}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[13.5px]">
@@ -109,12 +104,15 @@ export default function StudentsPage() {
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Institute</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Batch</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Status</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Email</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((s) => (
-                  <tr key={s.enrollmentNo} className="hover:bg-background transition-colors border-b border-border last:border-b-0">
+                  <tr
+                    key={s.enrollmentNo}
+                    onClick={() => setSelected(s)}
+                    className="hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer"
+                  >
                     <td className="px-4 py-3">
                       <div className="font-semibold text-foreground">{s.name || "—"}</div>
                       {s.gender && <div className="text-[11px] text-muted mt-0.5">{s.gender}</div>}
@@ -129,22 +127,7 @@ export default function StudentsPage() {
                       {s.instituteCode && <div className="text-[11px] text-muted mt-0.5">Code: {s.instituteCode}</div>}
                     </td>
                     <td className="px-4 py-3">{s.batchYear || "—"}</td>
-                    <td className="px-4 py-3">
-                      {s.passedOut === true ? (
-                        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold bg-green-100 text-green-700">
-                          Pass Out
-                        </span>
-                      ) : s.passedOut === false ? (
-                        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold bg-primary-faint text-primary">
-                          Enrolled
-                        </span>
-                      ) : (
-                        <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-500">
-                          Unknown
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-[13px]">{s.email || "—"}</td>
+                    <td className="px-4 py-3">{statusPill(s.passedOut)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -152,6 +135,29 @@ export default function StudentsPage() {
           </div>
         )}
       </div>
+
+      {selected && (
+        <DetailDialog
+          title={selected.name || selected.enrollmentNo}
+          subtitle={selected.enrollmentNo}
+          onClose={() => setSelected(null)}
+        >
+          <div className="mb-4">{statusPill(selected.passedOut)}</div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+            <DetailField label="Program" value={selected.courseShortName || selected.programName} />
+            <DetailField label="Program Code" value={selected.programCode} />
+            <DetailField label="Institute" value={selected.instituteName} />
+            <DetailField label="Institute Code" value={selected.instituteCode} />
+            <DetailField label="Batch Year" value={selected.batchYear} />
+            <DetailField label="Admission Year" value={selected.admissionYear} />
+            <DetailField label="Gender" value={selected.gender} />
+            <DetailField label="Contact Number" value={selected.contactNumber} />
+            <DetailField label="Email" value={selected.email} />
+            <DetailField label="Father's Name" value={selected.fatherName} />
+            <DetailField label="Mother's Name" value={selected.motherName} />
+          </div>
+        </DetailDialog>
+      )}
     </div>
   );
 }
