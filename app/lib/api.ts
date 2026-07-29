@@ -77,7 +77,6 @@ export interface Course {
   instituteCode: string | null;
   instituteName: string | null;
   totalSemesters: number | null;
-  confirmed: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -85,7 +84,19 @@ export interface Course {
 export interface CourseUpdate {
   shortName?: string | null;
   totalSemesters?: number | null;
-  confirmed?: boolean;
+}
+
+// ===== Institute types =====
+export interface Institute {
+  instituteCode: string;
+  instituteName: string;
+  shortName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InstituteUpdate {
+  shortName?: string | null;
 }
 
 // ===== API functions =====
@@ -160,5 +171,21 @@ export async function updateCourse(programCode: string, update: CourseUpdate): P
     body: JSON.stringify(update),
   });
   if (!res.ok) throw new Error(`Failed to update course: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchInstitutes(): Promise<Institute[]> {
+  const res = await fetch(`${API_BASE}/api/admin/institutes`);
+  if (!res.ok) throw new Error(`Failed to fetch institutes: ${res.status}`);
+  return res.json();
+}
+
+export async function updateInstitute(instituteCode: string, update: InstituteUpdate): Promise<Institute> {
+  const res = await fetch(`${API_BASE}/api/admin/institutes/${encodeURIComponent(instituteCode)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  if (!res.ok) throw new Error(`Failed to update institute: ${res.status}`);
   return res.json();
 }

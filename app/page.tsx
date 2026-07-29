@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { Users, FileCheck2, Megaphone, GraduationCap, ArrowRight } from "lucide-react";
+import { Users, FileCheck2, Megaphone, GraduationCap, Landmark, ArrowRight } from "lucide-react";
 import { useToast } from "./components/Toast";
 import PageHeader from "./components/PageHeader";
 import StatTile from "./components/StatTile";
@@ -23,7 +23,8 @@ const QUICK_LINKS = [
   { href: "/students", label: "Students", description: "View the registered student directory", icon: Users },
   { href: "/documents", label: "Documents", description: "Review submitted documents", icon: FileCheck2 },
   { href: "/notices", label: "Notices", description: "Publish and manage notices", icon: Megaphone },
-  { href: "/courses", label: "Courses", description: "Review course durations", icon: GraduationCap },
+  { href: "/courses", label: "Courses", description: "Set course durations", icon: GraduationCap },
+  { href: "/institutes", label: "Institutes", description: "Set institute short names", icon: Landmark },
 ];
 
 export default function DashboardPage() {
@@ -61,7 +62,7 @@ export default function DashboardPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const unconfirmedCourses = courses.filter((c) => !c.confirmed).length;
+  const coursesMissingDuration = courses.filter((c) => c.totalSemesters == null).length;
 
   const recentDocuments = useMemo(
     () =>
@@ -103,7 +104,7 @@ export default function DashboardPage() {
           label="Courses"
           icon={GraduationCap}
           color="teal"
-          subLabel={!loading && unconfirmedCourses > 0 ? `${unconfirmedCourses} awaiting review` : undefined}
+          subLabel={!loading && coursesMissingDuration > 0 ? `${coursesMissingDuration} missing duration` : undefined}
         />
       </div>
 
