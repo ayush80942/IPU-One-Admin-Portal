@@ -9,11 +9,51 @@ import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
 import DetailDialog, { DetailField } from "../components/DetailDialog";
 import { fetchStudents, StudentProfile } from "../lib/api";
+import { calculateYearAndSem } from "../lib/academicYear";
 
 function statusPill(passedOut: boolean | null) {
   if (passedOut === true) return <Pill color="text-success" colorFaint="bg-success-faint">Pass Out</Pill>;
-  if (passedOut === false) return <Pill color="text-primary" colorFaint="bg-primary-faint">Enrolled</Pill>;
-  return <Pill color="text-muted" colorFaint="bg-background">Unknown</Pill>;
+  if (passedOut === null) return <Pill color="text-muted" colorFaint="bg-background">Unknown</Pill>;
+  return null;
+}
+
+function yearSemPill(passedOut: boolean | null, batchYear: number | null) {
+  if (passedOut === true) return <Pill color="text-success" colorFaint="bg-success-faint">Pass Out</Pill>;
+  const yearSem = calculateYearAndSem(batchYear);
+  return <Pill color="text-primary" colorFaint="bg-primary-faint">{yearSem || "—"}</Pill>;
+}
+
+// The portal returns raw base64 (sometimes already prefixed as a data URL) — normalize to a data URL for <img>.
+function photoSrc(profileImage: string | null): string | null {
+  if (!profileImage) return null;
+  if (profileImage.startsWith("data:")) return profileImage;
+  return `data:image/jpeg;base64,${profileImage}`;
+}
+
+function Avatar({ profileImage, name, size = 36 }: { profileImage: string | null; name: string | null; size?: number }) {
+  const src = photoSrc(profileImage);
+  const [failed, setFailed] = useState(false);
+  const style = { width: size, height: size };
+  if (src && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={name || "Student"}
+        style={style}
+        className="rounded-full object-cover border border-border shrink-0"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <div
+      style={{ ...style, fontSize: size * 0.4 }}
+      className="rounded-full bg-primary-faint text-primary flex items-center justify-center font-bold shrink-0"
+    >
+      {(name || "?").trim().charAt(0).toUpperCase()}
+    </div>
+  );
 }
 
 export default function StudentsPage() {
@@ -45,7 +85,9 @@ export default function StudentsPage() {
         s.name?.toLowerCase().includes(q) ||
         s.enrollmentNo?.toLowerCase().includes(q) ||
         s.programName?.toLowerCase().includes(q) ||
+        s.courseShortName?.toLowerCase().includes(q) ||
         s.instituteName?.toLowerCase().includes(q) ||
+        s.instituteShortName?.toLowerCase().includes(q) ||
         s.email?.toLowerCase().includes(q)
     );
   }, [students, search]);
@@ -73,7 +115,14 @@ export default function StudentsPage() {
       {/* Table */}
       <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <h2 className="text-[15px] font-bold text-primary">Student Directory</h2>
+          <h2 className="text-[15px] font-bold text-primary">
+            Student Directory
+            {!loading && (
+              <span className="ml-2 text-[12px] font-normal text-muted">
+                {search.trim() ? `${filtered.length} of ${students.length}` : students.length}
+              </span>
+            )}
+          </h2>
           <button
             onClick={load}
             className="text-[13px] font-medium text-primary hover:underline"
@@ -97,13 +146,13 @@ export default function StudentsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-[13.5px]">
               <thead>
-                <tr className="bg-primary-faint">
+                <tr className="bg-primary-faint sticky top-0 z-10">
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Name</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Enrollment No</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Program</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Institute</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Batch</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Year & Sem</th>
                 </tr>
               </thead>
               <tbody>
@@ -111,11 +160,25 @@ export default function StudentsPage() {
                   <tr
                     key={s.enrollmentNo}
                     onClick={() => setSelected(s)}
-                    className="hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelected(s);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`View details for ${s.name || s.enrollmentNo}`}
+                    className="hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer focus:outline-none focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
                   >
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-foreground">{s.name || "—"}</div>
-                      {s.gender && <div className="text-[11px] text-muted mt-0.5">{s.gender}</div>}
+                      <div className="flex items-center gap-3">
+                        <Avatar profileImage={s.profileImage} name={s.name} />
+                        <div>
+                          <div className="font-semibold text-foreground">{s.name || "—"}</div>
+                          {s.gender && <div className="text-[11px] text-muted mt-0.5">{s.gender}</div>}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3 font-mono text-[13px]">{s.enrollmentNo}</td>
                     <td className="px-4 py-3">
@@ -123,11 +186,11 @@ export default function StudentsPage() {
                       {s.programCode && <div className="text-[11px] text-muted mt-0.5">Code: {s.programCode}</div>}
                     </td>
                     <td className="px-4 py-3">
-                      <div>{s.instituteName || "—"}</div>
+                      <div>{s.instituteShortName || s.instituteName || "—"}</div>
                       {s.instituteCode && <div className="text-[11px] text-muted mt-0.5">Code: {s.instituteCode}</div>}
                     </td>
                     <td className="px-4 py-3">{s.batchYear || "—"}</td>
-                    <td className="px-4 py-3">{statusPill(s.passedOut)}</td>
+                    <td className="px-4 py-3">{yearSemPill(s.passedOut, s.batchYear)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -137,16 +200,20 @@ export default function StudentsPage() {
       </div>
 
       {selected && (
-        <DetailDialog
-          title={selected.name || selected.enrollmentNo}
-          subtitle={selected.enrollmentNo}
-          onClose={() => setSelected(null)}
-        >
-          <div className="mb-4">{statusPill(selected.passedOut)}</div>
+        <DetailDialog onClose={() => setSelected(null)}>
+          <div className="flex flex-col items-center text-center mb-6">
+            <Avatar profileImage={selected.profileImage} name={selected.name} size={96} />
+            <div className="mt-3 text-[17px] font-bold text-foreground">{selected.name || "—"}</div>
+            <div className="text-[13px] font-mono text-muted mt-0.5">{selected.enrollmentNo}</div>
+            <div className="flex items-center gap-2 mt-3">
+              {selected.passedOut === null && statusPill(selected.passedOut)}
+              {yearSemPill(selected.passedOut, selected.batchYear)}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
             <DetailField label="Program" value={selected.courseShortName || selected.programName} />
             <DetailField label="Program Code" value={selected.programCode} />
-            <DetailField label="Institute" value={selected.instituteName} />
+            <DetailField label="Institute" value={selected.instituteShortName || selected.instituteName} />
             <DetailField label="Institute Code" value={selected.instituteCode} />
             <DetailField label="Batch Year" value={selected.batchYear} />
             <DetailField label="Admission Year" value={selected.admissionYear} />

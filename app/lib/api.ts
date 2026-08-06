@@ -40,6 +40,14 @@ export interface NoticeRequest {
   targetAdmissionYears: string | null;
 }
 
+export interface NoticeAttachmentResponse {
+  id: number;
+  url: string;
+  originalFilename: string | null;
+  contentType: string;
+  sizeBytes: number;
+}
+
 export interface PageResponse<T> {
   content: T[];
   totalPages: number;
@@ -59,6 +67,7 @@ export interface StudentProfile {
   courseShortName: string | null;
   instituteCode: string | null;
   instituteName: string | null;
+  instituteShortName: string | null;
   // null = unknown (that course's total semester count hasn't been set yet)
   passedOut: boolean | null;
   gender: string | null;
@@ -123,6 +132,17 @@ export async function createNotice(
     body: JSON.stringify(notice),
   });
   if (!res.ok) throw new Error(`Failed to create notice: ${res.status}`);
+  return res.json();
+}
+
+export async function uploadNoticeAttachment(file: File): Promise<NoticeAttachmentResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE}/api/notices/attachments`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) throw new Error(`Failed to upload file: ${res.status}`);
   return res.json();
 }
 

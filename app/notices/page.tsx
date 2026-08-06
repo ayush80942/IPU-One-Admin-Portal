@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Plus, Trash2, Megaphone, ExternalLink } from "lucide-react";
 import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
@@ -9,13 +9,14 @@ import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
 import NoticeForm from "../components/NoticeForm";
 import DetailDialog, { DetailField } from "../components/DetailDialog";
-import { fetchNotices, deleteNotice, NoticeResponse } from "../lib/api";
+import { fetchNotices, deleteNotice, fetchInstitutes, fetchCourses, NoticeResponse, Institute, Course } from "../lib/api";
 import {
   CATEGORIES,
   categoryTaxonomy,
   badgeTaxonomy,
-  programLabel,
-  instituteLabel,
+  instituteOptionsFrom,
+  programOptionsFrom,
+  labelLookup,
   resolveCodeList,
 } from "../lib/noticeTaxonomy";
 
@@ -29,6 +30,25 @@ export default function ManageNoticesPage() {
   const [selected, setSelected] = useState<NoticeResponse | null>(null);
   const [category, setCategory] = useState("");
   const [search, setSearch] = useState("");
+
+  // Institutes/courses back the Targeting column's code -> label resolution below.
+  const [institutes, setInstitutes] = useState<Institute[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [institutesData, coursesData] = await Promise.all([fetchInstitutes(), fetchCourses()]);
+        setInstitutes(institutesData);
+        setCourses(coursesData);
+      } catch {
+        // Falls back to showing raw codes — non-fatal for the notices list itself.
+      }
+    })();
+  }, []);
+
+  const instituteLabel = useMemo(() => labelLookup(instituteOptionsFrom(institutes)), [institutes]);
+  const programLabel = useMemo(() => labelLookup(programOptionsFrom(courses)), [courses]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -168,7 +188,7 @@ export default function ManageNoticesPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-[12px] text-muted max-w-[240px]">
-                        <TargetingSummary notice={n} />
+                        <TargetingSummary notice={n} programLabel={programLabel} instituteLabel={instituteLabel} />
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-muted">{n.date}</td>
                       <td className="px-4 py-3">
@@ -236,7 +256,10 @@ export default function ManageNoticesPage() {
               />
               <DetailField label="Type" value={selected.isPdf ? "PDF / File" : "External Link"} />
               <div className="col-span-2">
-                <DetailField label="Targeting" value={<TargetingSummary notice={selected} />} />
+                <DetailField
+                  label="Targeting"
+                  value={<TargetingSummary notice={selected} programLabel={programLabel} instituteLabel={instituteLabel} />}
+                />
               </div>
             </div>
             <div className="flex justify-end mt-6">
@@ -256,7 +279,15 @@ export default function ManageNoticesPage() {
   );
 }
 
-function TargetingSummary({ notice }: { notice: NoticeResponse }) {
+function TargetingSummary({
+  notice,
+  programLabel,
+  instituteLabel,
+}: {
+  notice: NoticeResponse;
+  programLabel: (code: string) => string;
+  instituteLabel: (code: string) => string;
+}) {
   const parts: string[] = [];
   if (notice.targetProgramCodes) parts.push(resolveCodeList(notice.targetProgramCodes, programLabel));
   if (notice.targetInstituteCodes) parts.push(resolveCodeList(notice.targetInstituteCodes, instituteLabel));

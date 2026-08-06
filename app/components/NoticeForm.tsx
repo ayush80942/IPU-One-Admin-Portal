@@ -1,16 +1,25 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useEffect, useMemo, FormEvent, ChangeEvent } from "react";
+import { Upload, X, FileText } from "lucide-react";
 import MultiSelect from "./MultiSelect";
 import { useToast } from "./Toast";
-import { createNotice, NoticeRequest } from "../lib/api";
+import {
+  createNotice,
+  fetchInstitutes,
+  fetchCourses,
+  uploadNoticeAttachment,
+  NoticeRequest,
+  NoticeAttachmentResponse,
+  Institute,
+  Course,
+} from "../lib/api";
 import {
   CATEGORIES,
   BADGES,
-  PROGRAM_OPTIONS,
-  INSTITUTE_OPTIONS,
   BATCH_YEAR_OPTIONS,
-  ADMISSION_YEAR_OPTIONS,
+  instituteOptionsFrom,
+  programOptionsFrom,
   NoticeCategoryValue,
   NoticeBadgeValue,
 } from "../lib/noticeTaxonomy";
@@ -19,9 +28,44 @@ interface NoticeFormProps {
   onCreated: () => void;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Used both to live-fill the field right after a successful upload and as a last-resort
+// default at submit time, so "Action Button Text" never has to block publishing.
+function fallbackActionText(isPdf: boolean, uploadedFile: NoticeAttachmentResponse | null): string {
+  if (isPdf && uploadedFile?.originalFilename) {
+    return uploadedFile.originalFilename.replace(/\.[^.]+$/, "");
+  }
+  return isPdf ? "View Attachment" : "View Details";
+}
+
 export default function NoticeForm({ onCreated }: NoticeFormProps) {
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
+
+  // Institutes/courses back the Institutes and Programs pickers below — fetched once so
+  // targeting always reflects real, current data instead of a hardcoded guess.
+  const [institutes, setInstitutes] = useState<Institute[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loadingTargets, setLoadingTargets] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [institutesData, coursesData] = await Promise.all([fetchInstitutes(), fetchCourses()]);
+        setInstitutes(institutesData);
+        setCourses(coursesData);
+      } catch (err) {
+        toast(`Failed to load institutes/programs: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+      } finally {
+        setLoadingTargets(false);
+      }
+    })();
+  }, [toast]);
 
   // Form state
   const [category, setCategory] = useState<NoticeCategoryValue>("EXAM");
@@ -31,10 +75,20 @@ export default function NoticeForm({ onCreated }: NoticeFormProps) {
   const [actionText, setActionText] = useState("");
   const [actionUrl, setActionUrl] = useState("");
   const [isPdf, setIsPdf] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<NoticeAttachmentResponse | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [programCodes, setProgramCodes] = useState<string[]>([]);
   const [instituteCodes, setInstituteCodes] = useState<string[]>([]);
   const [batchYears, setBatchYears] = useState<string[]>([]);
-  const [admissionYears, setAdmissionYears] = useState<string[]>([]);
+
+  const instituteOptions = useMemo(() => instituteOptionsFrom(institutes), [institutes]);
+  const programOptions = useMemo(() => programOptionsFrom(courses, instituteCodes), [courses, instituteCodes]);
+
+  // Selected institutes narrow which programs are shown — drop any selected program that
+  // no longer belongs to one of the currently selected institutes.
+  useEffect(() => {
+    setProgramCodes((prev) => prev.filter((code) => programOptions.some((o) => o.value === code)));
+  }, [programOptions]);
 
   const resetForm = () => {
     setCategory("EXAM");
@@ -44,17 +98,55 @@ export default function NoticeForm({ onCreated }: NoticeFormProps) {
     setActionText("");
     setActionUrl("");
     setIsPdf(false);
+    setUploadedFile(null);
     setProgramCodes([]);
     setInstituteCodes([]);
     setBatchYears([]);
-    setAdmissionYears([]);
+  };
+
+  // External Link and PDF/File modes don't share a meaningful actionUrl — switching
+  // clears both the URL and any uploaded file rather than carrying over a stale value.
+  const switchLinkType = (nextIsPdf: boolean) => {
+    if (nextIsPdf === isPdf) return;
+    setIsPdf(nextIsPdf);
+    setUploadedFile(null);
+    setActionUrl("");
+  };
+
+  const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file after clearing
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const result = await uploadNoticeAttachment(file);
+      setUploadedFile(result);
+      setActionUrl(result.url);
+      if (!actionText.trim()) {
+        setActionText(fallbackActionText(true, result));
+      }
+    } catch (err) {
+      toast(`Failed to upload file: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const clearUploadedFile = () => {
+    setUploadedFile(null);
+    setActionUrl("");
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
 
-    if (!title.trim() || !description.trim() || !actionText.trim() || !actionUrl.trim()) {
+    if (!title.trim() || !description.trim()) {
       toast("Please fill all required fields", "error");
+      return;
+    }
+    if (!actionUrl.trim()) {
+      toast(isPdf ? "Please upload a file" : "Please enter a redirect URL", "error");
       return;
     }
 
@@ -65,13 +157,13 @@ export default function NoticeForm({ onCreated }: NoticeFormProps) {
         badge: badge || null,
         title: title.trim(),
         description: description.trim(),
-        actionText: actionText.trim(),
+        actionText: actionText.trim() || fallbackActionText(isPdf, uploadedFile),
         actionUrl: actionUrl.trim(),
         isPdf,
         targetProgramCodes: programCodes.length > 0 ? programCodes.join(",") : null,
         targetInstituteCodes: instituteCodes.length > 0 ? instituteCodes.join(",") : null,
         targetBatchYears: batchYears.length > 0 ? batchYears.join(",") : null,
-        targetAdmissionYears: admissionYears.length > 0 ? admissionYears.join(",") : null,
+        targetAdmissionYears: null,
       };
       await createNotice(payload);
       toast("✓ Notice published successfully!");
@@ -163,60 +255,114 @@ export default function NoticeForm({ onCreated }: NoticeFormProps) {
         </h2>
 
         <div className="grid grid-cols-2 gap-4">
+          {/* Link type toggle */}
+          <div className="flex flex-col gap-1.5 col-span-2">
+            <label className="text-[11px] font-semibold text-muted uppercase tracking-wide">
+              Link Type
+            </label>
+            <div className="inline-flex w-fit rounded-lg border border-border bg-background p-1">
+              <button
+                type="button"
+                onClick={() => switchLinkType(false)}
+                className={`px-4 py-1.5 rounded-md text-[13px] font-semibold transition-colors ${
+                  !isPdf ? "bg-primary text-white" : "text-muted hover:text-foreground"
+                }`}
+              >
+                External Link
+              </button>
+              <button
+                type="button"
+                onClick={() => switchLinkType(true)}
+                className={`px-4 py-1.5 rounded-md text-[13px] font-semibold transition-colors ${
+                  isPdf ? "bg-primary text-white" : "text-muted hover:text-foreground"
+                }`}
+              >
+                PDF / File
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] font-semibold text-muted uppercase tracking-wide">
-              Action Button Text *
+              Action Button Text
             </label>
             <input
               type="text"
               value={actionText}
               onChange={(e) => setActionText(e.target.value)}
-              placeholder="e.g. exam_schedule.pdf"
+              placeholder={fallbackActionText(isPdf, uploadedFile)}
               className="border border-border rounded-lg px-3 py-2.5 text-[14px] bg-background focus:outline-none focus:border-primary transition-colors"
             />
+            <span className="text-[11px] text-muted">Leave blank to auto-fill from the file name</span>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-semibold text-muted uppercase tracking-wide">
-              Attachment / Redirect URL *
-            </label>
-            <input
-              type="url"
-              value={actionUrl}
-              onChange={(e) => setActionUrl(e.target.value)}
-              placeholder="https://…"
-              className="border border-border rounded-lg px-3 py-2.5 text-[14px] bg-background focus:outline-none focus:border-primary transition-colors"
-            />
-          </div>
-
-          {/* Link type toggle */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-semibold text-muted uppercase tracking-wide">
-              Link Type
-            </label>
-            <div className="flex items-center gap-4 mt-1">
-              <label className="flex items-center gap-2 cursor-pointer text-[14px]">
-                <input
-                  type="radio"
-                  name="isPdf"
-                  checked={!isPdf}
-                  onChange={() => setIsPdf(false)}
-                  className="accent-primary"
-                />
-                External Link
+          {isPdf ? (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold text-muted uppercase tracking-wide">
+                Attachment File *
               </label>
-              <label className="flex items-center gap-2 cursor-pointer text-[14px]">
-                <input
-                  type="radio"
-                  name="isPdf"
-                  checked={isPdf}
-                  onChange={() => setIsPdf(true)}
-                  className="accent-primary"
-                />
-                PDF / File
-              </label>
+              {uploadedFile ? (
+                <div className="flex items-center justify-between gap-2 border border-border rounded-lg px-3 py-2 bg-background">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="w-4 h-4 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-medium text-foreground truncate">
+                        {uploadedFile.originalFilename || "Uploaded file"}
+                      </div>
+                      <div className="text-[11px] text-muted">{formatBytes(uploadedFile.sizeBytes)}</div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearUploadedFile}
+                    className="text-muted hover:text-danger transition-colors shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label
+                  className={`flex items-center justify-center gap-2 border-2 border-dashed rounded-lg px-3 py-2.5 text-[13px] transition-colors ${
+                    uploading
+                      ? "opacity-60 pointer-events-none border-border text-muted"
+                      : "border-border hover:border-primary text-muted hover:text-primary cursor-pointer"
+                  }`}
+                >
+                  {uploading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin" />
+                      Uploading…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      Choose file to upload
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                    onChange={handleFileSelect}
+                    disabled={uploading}
+                    className="hidden"
+                  />
+                </label>
+              )}
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold text-muted uppercase tracking-wide">
+                Redirect URL *
+              </label>
+              <input
+                type="url"
+                value={actionUrl}
+                onChange={(e) => setActionUrl(e.target.value)}
+                placeholder="https://…"
+                className="border border-border rounded-lg px-3 py-2.5 text-[14px] bg-background focus:outline-none focus:border-primary transition-colors"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -234,56 +380,58 @@ export default function NoticeForm({ onCreated }: NoticeFormProps) {
 
           <div className="grid grid-cols-2 gap-5">
             <MultiSelect
-              label="Programs"
-              options={PROGRAM_OPTIONS}
-              selected={programCodes}
-              onChange={setProgramCodes}
-              placeholder="All Programs"
-              hint="Target specific degree programs"
-            />
-
-            <MultiSelect
               label="Institutes"
-              options={INSTITUTE_OPTIONS}
+              options={instituteOptions}
               selected={instituteCodes}
               onChange={setInstituteCodes}
-              placeholder="All Institutes"
-              hint="Target specific affiliated institutes"
+              placeholder={loadingTargets ? "Loading…" : "All Institutes"}
+              hint="Target specific institutes"
             />
 
             <MultiSelect
-              label="Batch Years"
-              options={BATCH_YEAR_OPTIONS}
-              selected={batchYears}
-              onChange={setBatchYears}
-              placeholder="All Batch Years"
-              hint="Year the batch started"
+              label="Programs"
+              options={programOptions}
+              selected={programCodes}
+              onChange={setProgramCodes}
+              placeholder={loadingTargets ? "Loading…" : "All Programs"}
+              hint={
+                instituteCodes.length > 0
+                  ? `Showing programs for ${instituteCodes.length} selected institute(s)`
+                  : "Target specific degree programs"
+              }
             />
 
-            <MultiSelect
-              label="Admission Years"
-              options={ADMISSION_YEAR_OPTIONS}
-              selected={admissionYears}
-              onChange={setAdmissionYears}
-              placeholder="All Admission Years"
-              hint="Year student was admitted"
-            />
+            <div className="col-span-2">
+              <MultiSelect
+                label="Batch Years"
+                options={BATCH_YEAR_OPTIONS}
+                selected={batchYears}
+                onChange={setBatchYears}
+                placeholder="All Batch Years"
+                hint="Year the batch started — limited to the last 5 years"
+              />
+            </div>
           </div>
         </div>
 
         {/* Targeting summary */}
-        {(programCodes.length > 0 || instituteCodes.length > 0 || batchYears.length > 0 || admissionYears.length > 0) && (
+        {(programCodes.length > 0 || instituteCodes.length > 0 || batchYears.length > 0) && (
           <div className="mt-4 p-3 bg-primary-faint rounded-lg border border-primary/10">
             <p className="text-[12px] font-semibold text-primary mb-1">Targeting Summary</p>
             <p className="text-[12px] text-muted">
               This notice will be visible to students matching{" "}
-              {programCodes.length > 0 && <span className="font-semibold text-foreground">{programCodes.length} program(s)</span>}
-              {programCodes.length > 0 && (instituteCodes.length > 0 || batchYears.length > 0 || admissionYears.length > 0) && " • "}
-              {instituteCodes.length > 0 && <span className="font-semibold text-foreground">{instituteCodes.length} institute(s)</span>}
-              {instituteCodes.length > 0 && (batchYears.length > 0 || admissionYears.length > 0) && " • "}
-              {batchYears.length > 0 && <span className="font-semibold text-foreground">{batchYears.length} batch year(s)</span>}
-              {batchYears.length > 0 && admissionYears.length > 0 && " • "}
-              {admissionYears.length > 0 && <span className="font-semibold text-foreground">{admissionYears.length} admission year(s)</span>}
+              {[
+                programCodes.length > 0 && `${programCodes.length} program(s)`,
+                instituteCodes.length > 0 && `${instituteCodes.length} institute(s)`,
+                batchYears.length > 0 && `${batchYears.length} batch year(s)`,
+              ]
+                .filter(Boolean)
+                .map((text, i) => (
+                  <span key={i}>
+                    {i > 0 && " • "}
+                    <span className="font-semibold text-foreground">{text}</span>
+                  </span>
+                ))}
             </p>
           </div>
         )}
@@ -300,7 +448,7 @@ export default function NoticeForm({ onCreated }: NoticeFormProps) {
         </button>
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || uploading}
           className="flex items-center gap-2 px-6 py-2.5 rounded-[10px] text-[14px] font-semibold text-white bg-primary hover:bg-primary-light transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {submitting ? (

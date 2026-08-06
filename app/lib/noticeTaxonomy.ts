@@ -2,6 +2,9 @@
 // (label + color token) and the targeting option datasets used by both the
 // creation form and the management table's display.
 
+import { yearOfStudy } from "./academicYear";
+import type { Course, Institute } from "./api";
+
 export interface TaxonomyOption {
   value: string;
   label: string;
@@ -37,71 +40,50 @@ export function badgeTaxonomy(value: string): TaxonomyOption | undefined {
 }
 
 // ===== Targeting option datasets =====
-// These can be fetched from the backend later; hardcoded for now based on IPU data.
-// Shared between the creation form (MultiSelect inputs) and the management
-// table (resolving stored codes back to human-readable labels).
-export const PROGRAM_OPTIONS = [
-  { value: "020", label: "B.Tech AI & DS" },
-  { value: "028", label: "B.Tech CSE" },
-  { value: "031", label: "B.Tech ECE" },
-  { value: "032", label: "B.Tech EEE" },
-  { value: "033", label: "B.Tech ME" },
-  { value: "034", label: "B.Tech CE" },
-  { value: "035", label: "B.Tech IT" },
-  { value: "040", label: "BBA" },
-  { value: "041", label: "BCA" },
-  { value: "050", label: "B.Com (H)" },
-  { value: "060", label: "BA (JMC)" },
-  { value: "070", label: "B.Ed" },
-  { value: "100", label: "MBA" },
-  { value: "110", label: "MCA" },
-  { value: "120", label: "M.Tech" },
-  { value: "130", label: "LLB" },
-  { value: "140", label: "BHMCT" },
-];
-
-export const INSTITUTE_OPTIONS = [
-  { value: "101", label: "USICT" },
-  { value: "102", label: "USAR" },
-  { value: "103", label: "USME" },
-  { value: "104", label: "USBAS" },
-  { value: "105", label: "USMS" },
-  { value: "106", label: "USLS" },
-  { value: "107", label: "USEM" },
-  { value: "108", label: "USBT" },
-  { value: "109", label: "USAP" },
-  { value: "110", label: "USE" },
-  { value: "127", label: "MSIT" },
-  { value: "128", label: "BPIT" },
-  { value: "129", label: "MAIT" },
-  { value: "131", label: "ADGITM" },
-  { value: "132", label: "HMR" },
-  { value: "133", label: "GTBIT" },
-  { value: "134", label: "BVCOE" },
-  { value: "136", label: "SSCBS" },
-  { value: "137", label: "DSEU" },
-  { value: "138", label: "AIACTR" },
-  { value: "139", label: "JIMS" },
-];
-
-function rollingYearOptions(count = 8) {
-  const currentYear = new Date().getFullYear();
-  return Array.from({ length: count }, (_, i) => {
-    const y = String(currentYear - i);
-    return { value: y, label: y };
-  });
+// Institutes/programs are built from the live Institutes/Courses admin data (real GGSIPU
+// codes) rather than a hardcoded guess, so the dropdowns always match what's actually in
+// the system — including institutes/programs curated after this file was last touched.
+export interface CodeOption {
+  value: string;
+  label: string;
 }
 
-export const BATCH_YEAR_OPTIONS = rollingYearOptions();
-export const ADMISSION_YEAR_OPTIONS = rollingYearOptions();
+export function instituteOptionsFrom(institutes: Institute[]): CodeOption[] {
+  return institutes
+    .map((i) => ({ value: i.instituteCode, label: i.shortName || i.instituteName }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
 
-function labelLookup(options: { value: string; label: string }[]) {
+// When instituteCodes is non-empty, only programs offered by one of those institutes are
+// returned — the notice form uses this to make the Programs picker cascade off Institutes.
+export function programOptionsFrom(courses: Course[], instituteCodes: string[] = []): CodeOption[] {
+  const scoped = instituteCodes.length > 0
+    ? courses.filter((c) => c.instituteCode && instituteCodes.includes(c.instituteCode))
+    : courses;
+  return scoped
+    .map((c) => ({ value: c.programCode, label: c.shortName || c.programName }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// Capped to the last 5 batches — beyond that, a batch has graduated for essentially every
+// program length offered, so older years aren't worth surfacing as a targeting option.
+function rollingYearOptions(count = 5) {
+  const currentYear = new Date().getFullYear();
+  return Array.from({ length: count }, (_, i) => currentYear - i);
+}
+
+// Batch year drives semester targeting, so each option is annotated with the year of study
+// it currently maps to (see academicYear.ts) — picking "2022" alone doesn't tell an admin
+// whether that's this year's 3rd-years or 4th-years.
+export const BATCH_YEAR_OPTIONS: CodeOption[] = rollingYearOptions().map((y) => {
+  const yos = yearOfStudy(y);
+  return { value: String(y), label: yos ? `${y} — Year ${yos}` : String(y) };
+});
+
+export function labelLookup(options: CodeOption[]) {
   const map = new Map(options.map((o) => [o.value, o.label]));
   return (code: string) => map.get(code) ?? code;
 }
-
-export const programLabel = labelLookup(PROGRAM_OPTIONS);
-export const instituteLabel = labelLookup(INSTITUTE_OPTIONS);
 
 // Resolves a comma-joined code list ("020,028") into human-readable labels
 // ("B.Tech AI & DS, B.Tech CSE") for display.

@@ -1,10 +1,10 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 import { X } from "lucide-react";
 
 interface DetailDialogProps {
-  title: string;
+  title?: string;
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
@@ -22,6 +22,14 @@ export default function DetailDialog({
   children,
   maxWidthClass = "max-w-2xl",
 }: DetailDialogProps) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
@@ -37,9 +45,9 @@ export default function DetailDialog({
         >
           <X className="w-4 h-4" />
         </button>
-        <h2 className="text-xl font-bold text-primary mb-1 pr-10">{title}</h2>
+        {title && <h2 className="text-xl font-bold text-primary mb-1 pr-10">{title}</h2>}
         {subtitle && <p className="text-[13px] text-muted mb-6">{subtitle}</p>}
-        {!subtitle && <div className="mb-4" />}
+        {!title && !subtitle && <div className="mb-2" />}
         {children}
       </div>
     </div>
