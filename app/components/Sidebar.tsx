@@ -3,13 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Megaphone, Users, FileCheck2, GraduationCap, Landmark } from "lucide-react";
+import { LayoutDashboard, Megaphone, Users, FileCheck2, GraduationCap, Landmark, Receipt } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/notices", label: "Notices", icon: Megaphone },
   { href: "/students", label: "Students", icon: Users },
   { href: "/documents", label: "Documents", icon: FileCheck2 },
+  { href: "/fees", label: "Fee Payments", icon: Receipt },
   { href: "/courses", label: "Courses", icon: GraduationCap },
   { href: "/institutes", label: "Institutes", icon: Landmark },
 ];

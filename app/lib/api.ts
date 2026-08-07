@@ -209,3 +209,132 @@ export async function updateInstitute(instituteCode: string, update: InstituteUp
   if (!res.ok) throw new Error(`Failed to update institute: ${res.status}`);
   return res.json();
 }
+
+// ===== Fee types =====
+export type FeeStatus = "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
+export type FeeChannel = "FEE_PORTAL" | "BANK_TRANSFER" | "OTHER";
+
+// One student's standing for one academic year. submissionId/submittedAt are null
+// for NOT_SUBMITTED — those rows are the roster of who still owes proof of payment.
+export interface FeeRosterRow {
+  enrollmentNo: string;
+  name: string | null;
+  programCode: string | null;
+  instituteCode: string | null;
+  batchYear: number | null;
+  submissionId: number | null;
+  status: FeeStatus;
+  transactionCount: number;
+  totalAmount: number | null;
+  submittedAt: string | null;
+}
+
+export interface FeeSummary {
+  academicYear: number;
+  paid: number;
+  pending: number;
+  rejected: number;
+  notSubmitted: number;
+  total: number;
+}
+
+export interface FeeTransaction {
+  id: number;
+  channel: FeeChannel;
+  referenceNumber: string | null;
+  amount: number;
+  paymentDate: string;
+  bankName: string | null;
+  fileUrl: string;
+  contentType: string;
+  fileSizeBytes: number;
+  uploadedAt: string;
+}
+
+export interface FeeSubmissionDetail {
+  id: number;
+  academicYear: number;
+  label: string;
+  status: FeeStatus;
+  rejectionRemark: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
+  enrollmentNo: string;
+  name: string | null;
+  programCode: string | null;
+  programName: string | null;
+  instituteCode: string | null;
+  instituteName: string | null;
+  batchYear: number | null;
+  admissionYear: number | null;
+  transactionCount: number;
+  totalAmount: number | null;
+  transactions: FeeTransaction[];
+}
+
+export interface FeeRosterFilters {
+  academicYear: number;
+  programCode?: string;
+  instituteCode?: string;
+  batchYear?: string;
+  status?: string;
+  search?: string;
+}
+
+// The admin API reports validation failures (a REJECT without a remark, most notably)
+// in a { "message": … } body — surface it verbatim so the user can act on it.
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body?.message === "string" && body.message) return body.message;
+  } catch {
+    // Non-JSON error body — fall through to the status-code message.
+  }
+  return fallback;
+}
+
+export async function fetchFees(
+  filters: FeeRosterFilters,
+  page = 0,
+  size = 20
+): Promise<PageResponse<FeeRosterRow>> {
+  const params = new URLSearchParams({
+    academicYear: String(filters.academicYear),
+    page: String(page),
+    size: String(size),
+  });
+  if (filters.programCode) params.set("programCode", filters.programCode);
+  if (filters.instituteCode) params.set("instituteCode", filters.instituteCode);
+  if (filters.batchYear) params.set("batchYear", filters.batchYear);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.search) params.set("search", filters.search);
+  const res = await fetch(`${API_BASE}/api/admin/fees?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch fee submissions: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchFeeSummary(academicYear: number): Promise<FeeSummary> {
+  const res = await fetch(`${API_BASE}/api/admin/fees/summary?academicYear=${academicYear}`);
+  if (!res.ok) throw new Error(`Failed to fetch fee summary: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchFeeSubmission(id: number): Promise<FeeSubmissionDetail> {
+  const res = await fetch(`${API_BASE}/api/admin/fees/submissions/${id}`);
+  if (!res.ok) throw new Error(`Failed to fetch submission: ${res.status}`);
+  return res.json();
+}
+
+export async function reviewFeeSubmission(
+  id: number,
+  action: "APPROVE" | "REJECT",
+  remark?: string
+): Promise<FeeSubmissionDetail> {
+  const res = await fetch(`${API_BASE}/api/admin/fees/submissions/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(action === "REJECT" ? { action, remark } : { action }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to review submission: ${res.status}`));
+  return res.json();
+}
