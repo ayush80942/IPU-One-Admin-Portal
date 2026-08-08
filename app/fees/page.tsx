@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Receipt, Search } from "lucide-react";
 import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
 import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
+import Filter, { SELECT_CLASS } from "../components/Filter";
 import FeeSubmissionDialog from "../components/FeeSubmissionDialog";
 import {
   fetchFees,
@@ -28,18 +29,6 @@ import {
 } from "../lib/noticeTaxonomy";
 
 const PAGE_SIZE = 20;
-
-function Filter({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-[11px] font-semibold text-muted uppercase tracking-wide">{label}</label>
-      {children}
-    </div>
-  );
-}
-
-const SELECT_CLASS =
-  "w-full border border-border rounded-lg px-3 py-2.5 text-[14px] bg-background focus:outline-none focus:border-primary transition-colors";
 
 export default function FeesPage() {
   const { toast } = useToast();
