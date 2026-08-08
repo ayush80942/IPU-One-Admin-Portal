@@ -338,3 +338,108 @@ export async function reviewFeeSubmission(
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to review submission: ${res.status}`));
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Credits
+// ---------------------------------------------------------------------------
+
+export interface CreditRule {
+  paperCode: string;
+  credits: number;
+  note: string | null;
+  adminEdited: boolean;
+  updatedAt: string | null;
+}
+
+export interface CreditPattern {
+  id: string;
+  regex: string;
+  credits: number;
+  description: string;
+  priority: number;
+  active: boolean;
+}
+
+/** A paper seen in real results that no exact rule covers. NONE = counts for zero credits. */
+export interface UnmappedPaper {
+  paperCode: string;
+  subjectName: string | null;
+  creditSource: "PATTERN" | "NONE";
+  currentCredits: number;
+  studentCount: number;
+}
+
+export interface PublishPreview {
+  subjectsChanged: number;
+  semestersChanged: number;
+  studentsAffected: number;
+  papers: { paperCode: string; oldCredits: number; newCredits: number; subjectRows: number }[];
+}
+
+export async function fetchCreditRules(): Promise<CreditRule[]> {
+  const res = await fetch(`${API_BASE}/api/admin/credits/rules`);
+  if (!res.ok) throw new Error(`Failed to fetch credit rules: ${res.status}`);
+  return res.json();
+}
+
+export async function saveCreditRule(paperCode: string, credits: number, note?: string | null): Promise<CreditRule> {
+  const res = await fetch(`${API_BASE}/api/admin/credits/rules`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paperCode, credits, note: note ?? null }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to save credit rule: ${res.status}`));
+  return res.json();
+}
+
+export async function deleteCreditRule(paperCode: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/admin/credits/rules/${encodeURIComponent(paperCode)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete credit rule: ${res.status}`));
+}
+
+export async function fetchCreditPatterns(): Promise<CreditPattern[]> {
+  const res = await fetch(`${API_BASE}/api/admin/credits/patterns`);
+  if (!res.ok) throw new Error(`Failed to fetch credit patterns: ${res.status}`);
+  return res.json();
+}
+
+export async function saveCreditPattern(
+  id: string | null,
+  update: Partial<Omit<CreditPattern, "id">>
+): Promise<CreditPattern> {
+  const res = await fetch(
+    id ? `${API_BASE}/api/admin/credits/patterns/${id}` : `${API_BASE}/api/admin/credits/patterns`,
+    {
+      method: id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
+    }
+  );
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to save pattern: ${res.status}`));
+  return res.json();
+}
+
+export async function deleteCreditPattern(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/admin/credits/patterns/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete pattern: ${res.status}`));
+}
+
+export async function fetchUnmappedPapers(): Promise<UnmappedPaper[]> {
+  const res = await fetch(`${API_BASE}/api/admin/credits/unmapped`);
+  if (!res.ok) throw new Error(`Failed to fetch unmapped papers: ${res.status}`);
+  return res.json();
+}
+
+/** Dry run — writes nothing. */
+export async function previewCreditPublish(): Promise<PublishPreview> {
+  const res = await fetch(`${API_BASE}/api/admin/credits/publish/preview`);
+  if (!res.ok) throw new Error(`Failed to preview publish: ${res.status}`);
+  return res.json();
+}
+
+/** Rewrites stored credits and SGPAs for already-imported results. */
+export async function publishCredits(): Promise<PublishPreview> {
+  const res = await fetch(`${API_BASE}/api/admin/credits/publish`, { method: "POST" });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to publish credits: ${res.status}`));
+  return res.json();
+}
