@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { Users, FileCheck2, Megaphone, GraduationCap, Landmark, ArrowRight } from "lucide-react";
+import { Users, FileCheck2, Megaphone, GraduationCap, Landmark, Receipt, ArrowRight } from "lucide-react";
 import { useToast } from "./components/Toast";
 import PageHeader from "./components/PageHeader";
 import StatTile from "./components/StatTile";
@@ -22,6 +22,7 @@ import { categoryTaxonomy } from "./lib/noticeTaxonomy";
 const QUICK_LINKS = [
   { href: "/students", label: "Students", description: "View the registered student directory", icon: Users },
   { href: "/documents", label: "Documents", description: "Review submitted documents", icon: FileCheck2 },
+  { href: "/fees", label: "Fee Payments", description: "Verify proofs and chase non-payers", icon: Receipt },
   { href: "/notices", label: "Notices", description: "Publish and manage notices", icon: Megaphone },
   { href: "/courses", label: "Courses", description: "Set course durations", icon: GraduationCap },
   { href: "/institutes", label: "Institutes", description: "Set institute short names", icon: Landmark },
@@ -72,17 +73,29 @@ export default function DashboardPage() {
     [documents]
   );
 
-  const instituteCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+  // Grouped on programCode rather than the label, so two courses an admin hasn't given a
+  // short name to yet stay separate bars instead of collapsing into one.
+  const courseCounts = useMemo(() => {
+    const counts = new Map<string, { code: string; label: string; title: string; count: number }>();
     for (const s of students) {
-      const key = s.instituteName || "Unknown";
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const key = s.programCode ?? "unknown";
+      const existing = counts.get(key);
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+      counts.set(key, {
+        code: key,
+        label: s.courseShortName || s.programName || s.programCode || "Unknown",
+        title: s.programName || s.courseShortName || s.programCode || "Unknown",
+        count: 1,
+      });
     }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
+    return [...counts.values()]
+      .sort((a, b) => b.count - a.count)
       .slice(0, 8);
   }, [students]);
-  const maxInstituteCount = instituteCounts[0]?.[1] ?? 1;
+  const maxCourseCount = courseCounts[0]?.count ?? 1;
 
   return (
     <div>
@@ -109,27 +122,27 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* Students by institute */}
+        {/* Students by course */}
         <div className="bg-surface border border-border rounded-2xl shadow-sm p-6">
-          <h2 className="text-[15px] font-bold text-primary mb-5">Students by Institute</h2>
+          <h2 className="text-[15px] font-bold text-primary mb-5">Students by Course</h2>
           {loading ? (
             <div className="space-y-3">
               {[1, 2, 3, 4].map((i) => <div key={i} className="skeleton h-6 rounded-lg" />)}
             </div>
-          ) : instituteCounts.length === 0 ? (
+          ) : courseCounts.length === 0 ? (
             <p className="text-muted text-[13px]">No student data yet.</p>
           ) : (
             <div className="space-y-3">
-              {instituteCounts.map(([name, count]) => (
-                <div key={name} className="flex items-center gap-3">
-                  <div className="w-28 shrink-0 text-[12px] text-muted truncate" title={name}>{name}</div>
+              {courseCounts.map((course) => (
+                <div key={course.code} className="flex items-center gap-3">
+                  <div className="w-28 shrink-0 text-[12px] text-muted truncate" title={course.title}>{course.label}</div>
                   <div className="flex-1 bg-background rounded-full h-2.5 overflow-hidden">
                     <div
                       className="h-full bg-primary rounded-full"
-                      style={{ width: `${Math.max((count / maxInstituteCount) * 100, 4)}%` }}
+                      style={{ width: `${Math.max((course.count / maxCourseCount) * 100, 4)}%` }}
                     />
                   </div>
-                  <div className="w-8 shrink-0 text-[12px] font-bold text-primary text-right">{count}</div>
+                  <div className="w-8 shrink-0 text-[12px] font-bold text-primary text-right">{course.count}</div>
                 </div>
               ))}
             </div>
