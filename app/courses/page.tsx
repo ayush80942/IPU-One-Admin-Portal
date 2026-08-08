@@ -61,6 +61,7 @@ export default function CoursesPage() {
             <table className="w-full text-[13.5px]">
               <thead>
                 <tr className="bg-primary-faint">
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Code</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Program</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Institute</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Short Name</th>
@@ -141,12 +142,12 @@ function CourseRow({
 
   return (
     <tr className="hover:bg-background transition-colors border-b border-border last:border-b-0">
+      <td className="px-4 py-3 font-mono text-[13px]">{course.programCode}</td>
       <td
         className="px-4 py-3 cursor-pointer group"
         onClick={() => onExpand(course)}
       >
         <div className="font-semibold group-hover:text-primary group-hover:underline">{course.programName}</div>
-        <div className="text-[11px] text-muted mt-0.5">Code: {course.programCode}</div>
       </td>
       <td className="px-4 py-3 text-[12px] text-muted">{course.instituteName || "—"}</td>
       <td className="px-4 py-3">
