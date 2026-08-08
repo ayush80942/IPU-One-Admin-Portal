@@ -5,6 +5,36 @@ import type { NoticeBadgeValue, NoticeCategoryValue } from "./noticeTaxonomy";
 // runs, or the app silently falls back to localhost in production.
 export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080").replace(/\/+$/, "");
 
+/** Shared with lib/auth.ts, which owns writing the session; this module only reads it. */
+export const TOKEN_KEY = "ipuone.admin.token";
+
+function authHeaders(init?: RequestInit): HeadersInit {
+  const headers = new Headers(init?.headers);
+  const token = typeof window === "undefined" ? null : window.sessionStorage.getItem(TOKEN_KEY);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return headers;
+}
+
+/**
+ * Every backend call goes through here so the admin session token is attached in one place
+ * rather than at ~25 call sites, and so an expired session lands on the sign-in screen instead
+ * of surfacing as an unexplained "failed to load" toast on whatever page happened to be open.
+ */
+async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, { ...init, headers: authHeaders(init) });
+
+  if ((res.status === 401 || res.status === 403) && typeof window !== "undefined") {
+    window.sessionStorage.removeItem(TOKEN_KEY);
+    window.sessionStorage.removeItem("ipuone.admin.email");
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    }
+  }
+
+  return res;
+}
+
+
 export function resolveFileUrl(fileUrl: string): string {
   return fileUrl.startsWith("http") ? fileUrl : `${API_BASE}${fileUrl}`;
 }
@@ -118,7 +148,7 @@ export async function fetchNotices(
   const params = new URLSearchParams({ page: String(page), size: String(size) });
   if (category) params.set("category", category);
   if (search) params.set("search", search);
-  const res = await fetch(`${API_BASE}/api/notices?${params.toString()}`);
+  const res = await apiFetch(`${API_BASE}/api/notices?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch notices: ${res.status}`);
   return res.json();
 }
@@ -126,7 +156,7 @@ export async function fetchNotices(
 export async function createNotice(
   notice: NoticeRequest
 ): Promise<NoticeResponse> {
-  const res = await fetch(`${API_BASE}/api/notices`, {
+  const res = await apiFetch(`${API_BASE}/api/notices`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(notice),
@@ -138,7 +168,7 @@ export async function createNotice(
 export async function uploadNoticeAttachment(file: File): Promise<NoticeAttachmentResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${API_BASE}/api/notices/attachments`, {
+  const res = await apiFetch(`${API_BASE}/api/notices/attachments`, {
     method: "POST",
     body: formData,
   });
@@ -147,14 +177,14 @@ export async function uploadNoticeAttachment(file: File): Promise<NoticeAttachme
 }
 
 export async function deleteNotice(id: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/notices/${id}`, {
+  const res = await apiFetch(`${API_BASE}/api/notices/${id}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Failed to delete notice: ${res.status}`);
 }
 
 export async function fetchStudents(): Promise<StudentProfile[]> {
-  const res = await fetch(`${API_BASE}/api/student/all`);
+  const res = await apiFetch(`${API_BASE}/api/student/all`);
   if (!res.ok) throw new Error(`Failed to fetch students: ${res.status}`);
   return res.json();
 }
@@ -173,19 +203,19 @@ export interface DocumentResponse {
 }
 
 export async function fetchDocuments(): Promise<DocumentResponse[]> {
-  const res = await fetch(`${API_BASE}/api/admin/documents`);
+  const res = await apiFetch(`${API_BASE}/api/admin/documents`);
   if (!res.ok) throw new Error(`Failed to fetch documents: ${res.status}`);
   return res.json();
 }
 
 export async function fetchCourses(): Promise<Course[]> {
-  const res = await fetch(`${API_BASE}/api/admin/courses`);
+  const res = await apiFetch(`${API_BASE}/api/admin/courses`);
   if (!res.ok) throw new Error(`Failed to fetch courses: ${res.status}`);
   return res.json();
 }
 
 export async function updateCourse(programCode: string, update: CourseUpdate): Promise<Course> {
-  const res = await fetch(`${API_BASE}/api/admin/courses/${encodeURIComponent(programCode)}`, {
+  const res = await apiFetch(`${API_BASE}/api/admin/courses/${encodeURIComponent(programCode)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(update),
@@ -195,13 +225,13 @@ export async function updateCourse(programCode: string, update: CourseUpdate): P
 }
 
 export async function fetchInstitutes(): Promise<Institute[]> {
-  const res = await fetch(`${API_BASE}/api/admin/institutes`);
+  const res = await apiFetch(`${API_BASE}/api/admin/institutes`);
   if (!res.ok) throw new Error(`Failed to fetch institutes: ${res.status}`);
   return res.json();
 }
 
 export async function updateInstitute(instituteCode: string, update: InstituteUpdate): Promise<Institute> {
-  const res = await fetch(`${API_BASE}/api/admin/institutes/${encodeURIComponent(instituteCode)}`, {
+  const res = await apiFetch(`${API_BASE}/api/admin/institutes/${encodeURIComponent(instituteCode)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(update),
@@ -308,19 +338,19 @@ export async function fetchFees(
   if (filters.batchYear) params.set("batchYear", filters.batchYear);
   if (filters.status) params.set("status", filters.status);
   if (filters.search) params.set("search", filters.search);
-  const res = await fetch(`${API_BASE}/api/admin/fees?${params.toString()}`);
+  const res = await apiFetch(`${API_BASE}/api/admin/fees?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch fee submissions: ${res.status}`);
   return res.json();
 }
 
 export async function fetchFeeSummary(academicYear: number): Promise<FeeSummary> {
-  const res = await fetch(`${API_BASE}/api/admin/fees/summary?academicYear=${academicYear}`);
+  const res = await apiFetch(`${API_BASE}/api/admin/fees/summary?academicYear=${academicYear}`);
   if (!res.ok) throw new Error(`Failed to fetch fee summary: ${res.status}`);
   return res.json();
 }
 
 export async function fetchFeeSubmission(id: number): Promise<FeeSubmissionDetail> {
-  const res = await fetch(`${API_BASE}/api/admin/fees/submissions/${id}`);
+  const res = await apiFetch(`${API_BASE}/api/admin/fees/submissions/${id}`);
   if (!res.ok) throw new Error(`Failed to fetch submission: ${res.status}`);
   return res.json();
 }
@@ -330,7 +360,7 @@ export async function reviewFeeSubmission(
   action: "APPROVE" | "REJECT",
   remark?: string
 ): Promise<FeeSubmissionDetail> {
-  const res = await fetch(`${API_BASE}/api/admin/fees/submissions/${id}`, {
+  const res = await apiFetch(`${API_BASE}/api/admin/fees/submissions/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(action === "REJECT" ? { action, remark } : { action }),
@@ -377,13 +407,13 @@ export interface PublishPreview {
 }
 
 export async function fetchCreditRules(): Promise<CreditRule[]> {
-  const res = await fetch(`${API_BASE}/api/admin/credits/rules`);
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/rules`);
   if (!res.ok) throw new Error(`Failed to fetch credit rules: ${res.status}`);
   return res.json();
 }
 
 export async function saveCreditRule(paperCode: string, credits: number, note?: string | null): Promise<CreditRule> {
-  const res = await fetch(`${API_BASE}/api/admin/credits/rules`, {
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/rules`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ paperCode, credits, note: note ?? null }),
@@ -393,12 +423,12 @@ export async function saveCreditRule(paperCode: string, credits: number, note?: 
 }
 
 export async function deleteCreditRule(paperCode: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/admin/credits/rules/${encodeURIComponent(paperCode)}`, { method: "DELETE" });
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/rules/${encodeURIComponent(paperCode)}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete credit rule: ${res.status}`));
 }
 
 export async function fetchCreditPatterns(): Promise<CreditPattern[]> {
-  const res = await fetch(`${API_BASE}/api/admin/credits/patterns`);
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/patterns`);
   if (!res.ok) throw new Error(`Failed to fetch credit patterns: ${res.status}`);
   return res.json();
 }
@@ -407,7 +437,7 @@ export async function saveCreditPattern(
   id: string | null,
   update: Partial<Omit<CreditPattern, "id">>
 ): Promise<CreditPattern> {
-  const res = await fetch(
+  const res = await apiFetch(
     id ? `${API_BASE}/api/admin/credits/patterns/${id}` : `${API_BASE}/api/admin/credits/patterns`,
     {
       method: id ? "PUT" : "POST",
@@ -420,26 +450,26 @@ export async function saveCreditPattern(
 }
 
 export async function deleteCreditPattern(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/admin/credits/patterns/${id}`, { method: "DELETE" });
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/patterns/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete pattern: ${res.status}`));
 }
 
 export async function fetchUnmappedPapers(): Promise<UnmappedPaper[]> {
-  const res = await fetch(`${API_BASE}/api/admin/credits/unmapped`);
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/unmapped`);
   if (!res.ok) throw new Error(`Failed to fetch unmapped papers: ${res.status}`);
   return res.json();
 }
 
 /** Dry run — writes nothing. */
 export async function previewCreditPublish(): Promise<PublishPreview> {
-  const res = await fetch(`${API_BASE}/api/admin/credits/publish/preview`);
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/publish/preview`);
   if (!res.ok) throw new Error(`Failed to preview publish: ${res.status}`);
   return res.json();
 }
 
 /** Rewrites stored credits and SGPAs for already-imported results. */
 export async function publishCredits(): Promise<PublishPreview> {
-  const res = await fetch(`${API_BASE}/api/admin/credits/publish`, { method: "POST" });
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/publish`, { method: "POST" });
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to publish credits: ${res.status}`));
   return res.json();
 }

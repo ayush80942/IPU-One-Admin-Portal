@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Sidebar from "./components/Sidebar";
+import AuthGate from "./components/AuthGate";
 import { ToastProvider } from "./components/Toast";
 
 const geistSans = Geist({
@@ -31,8 +31,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex">
         <ToastProvider>
-          <Sidebar />
-          <main className="flex-1 overflow-y-auto p-8">{children}</main>
+          <AuthGate>{children}</AuthGate>
         </ToastProvider>
       </body>
     </html>

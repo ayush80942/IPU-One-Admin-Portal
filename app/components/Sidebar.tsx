@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LayoutDashboard, Megaphone, Users, FileCheck2, GraduationCap, Landmark, Receipt, Calculator } from "lucide-react";
+import { clearSession, getAdminEmail } from "../lib/auth";
+import { usePathname, useRouter } from "next/navigation";
+import { LayoutDashboard, Megaphone, Users, FileCheck2, GraduationCap, Landmark, Receipt, Calculator, LogOut } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -17,6 +20,18 @@ const NAV_ITEMS = [
 ];
 
 export default function Sidebar() {
+  const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+
+  // Read after mount: sessionStorage does not exist during the server render, and reading it
+  // in the component body would make the markup differ between server and client.
+  useEffect(() => { setEmail(getAdminEmail()); }, []);
+
+  const signOut = () => {
+    clearSession();
+    router.replace("/login");
+  };
+
   const pathname = usePathname();
 
   return (
@@ -58,9 +73,21 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom version */}
-      <div className="mt-auto pt-6 text-[11px] text-muted/50">
-        v0.1.0 • Student Cell
+      {/* Signed-in account + sign out */}
+      <div className="mt-auto pt-6 border-t border-border">
+        {email && (
+          <div className="text-[11px] text-muted truncate mb-2" title={email}>
+            {email}
+          </div>
+        )}
+        <button
+          onClick={signOut}
+          className="flex items-center gap-2 text-[13px] font-medium text-muted hover:text-primary transition-colors"
+        >
+          <LogOut className="w-4 h-4" strokeWidth={2} />
+          Sign out
+        </button>
+        <div className="mt-4 text-[11px] text-muted/50">v0.1.0 • Student Cell</div>
       </div>
     </aside>
   );
