@@ -2,7 +2,8 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lock, Mail, ShieldCheck } from "lucide-react";
+import Image from "next/image";
+import { Lock, Mail } from "lucide-react";
 import { login, storeSession } from "../lib/auth";
 
 function LoginForm() {
@@ -33,11 +34,18 @@ function LoginForm() {
   return (
     <div className="w-full max-w-sm">
       <div className="flex flex-col items-center mb-8">
-        <div className="w-14 h-14 rounded-2xl bg-primary-faint flex items-center justify-center mb-4">
-          <ShieldCheck className="w-7 h-7 text-primary" />
-        </div>
-        <h1 className="text-[22px] font-extrabold text-primary">IPU One</h1>
-        <p className="text-[13px] text-muted mt-1">Student Cell Portal</p>
+        {/* The same university lockup the Android app shows on its sign-in screen
+            (IPUOneApp res/drawable/logo.png), so the two front doors match. */}
+        <Image
+          src="/university-logo.png"
+          alt="Guru Gobind Singh Indraprastha University"
+          width={640}
+          height={166}
+          priority
+          className="w-full max-w-[260px] h-auto"
+        />
+        <h1 className="text-[20px] font-extrabold text-primary mt-6">IPU One</h1>
+        <p className="text-[13px] text-muted mt-0.5">Student Cell Portal</p>
       </div>
 
       <form onSubmit={submit} className="bg-surface border border-border rounded-2xl shadow-sm p-6">
