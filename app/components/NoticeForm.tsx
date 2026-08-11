@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, FormEvent, ChangeEvent } from "react";
 import { Upload, X, FileText } from "lucide-react";
 import MultiSelect from "./MultiSelect";
 import { useToast } from "./Toast";
+import { useAdminSession } from "./AuthGate";
 import {
   createNotice,
   fetchInstitutes,
@@ -45,7 +46,15 @@ function fallbackActionText(isPdf: boolean, uploadedFile: NoticeAttachmentRespon
 
 export default function NoticeForm({ onCreated }: NoticeFormProps) {
   const { toast } = useToast();
+  const session = useAdminSession();
   const [submitting, setSubmitting] = useState(false);
+
+  // An institute admin's notices always go to their own institutes - the backend overwrites the
+  // target regardless of what is sent, so the picker is shown locked rather than editable and
+  // silently ignored.
+  const lockedInstitutes = session && session.role !== "SUPER_ADMIN"
+    ? session.institutes.map((i) => i.instituteCode)
+    : null;
 
   // Institutes/courses back the Institutes and Programs pickers below — fetched once so
   // targeting always reflects real, current data instead of a hardcoded guess.
@@ -78,7 +87,7 @@ export default function NoticeForm({ onCreated }: NoticeFormProps) {
   const [uploadedFile, setUploadedFile] = useState<NoticeAttachmentResponse | null>(null);
   const [uploading, setUploading] = useState(false);
   const [programCodes, setProgramCodes] = useState<string[]>([]);
-  const [instituteCodes, setInstituteCodes] = useState<string[]>([]);
+  const [instituteCodes, setInstituteCodes] = useState<string[]>(lockedInstitutes ?? []);
   const [batchYears, setBatchYears] = useState<string[]>([]);
 
   const instituteOptions = useMemo(() => instituteOptionsFrom(institutes), [institutes]);
@@ -100,7 +109,7 @@ export default function NoticeForm({ onCreated }: NoticeFormProps) {
     setIsPdf(false);
     setUploadedFile(null);
     setProgramCodes([]);
-    setInstituteCodes([]);
+    setInstituteCodes(lockedInstitutes ?? []);
     setBatchYears([]);
   };
 
@@ -374,8 +383,11 @@ export default function NoticeForm({ onCreated }: NoticeFormProps) {
 
         <div className="bg-background border-2 border-dashed border-border rounded-xl p-5 mb-2">
           <p className="text-[13px] text-muted mb-5">
-            Leave any field empty to target <strong className="text-foreground">all students</strong> in that dimension.
-            Use the dropdowns below to select specific groups.
+            Leave any field empty to target{" "}
+            <strong className="text-foreground">
+              {lockedInstitutes != null ? "all students of your institute" : "all students"}
+            </strong>{" "}
+            in that dimension. Use the dropdowns below to select specific groups.
           </p>
 
           <div className="grid grid-cols-2 gap-5">
@@ -384,8 +396,13 @@ export default function NoticeForm({ onCreated }: NoticeFormProps) {
               options={instituteOptions}
               selected={instituteCodes}
               onChange={setInstituteCodes}
+              disabled={lockedInstitutes != null}
               placeholder={loadingTargets ? "Loading…" : "All Institutes"}
-              hint="Target specific institutes"
+              hint={
+                lockedInstitutes != null
+                  ? "Notices you publish always go to your own institute."
+                  : "Target specific institutes"
+              }
             />
 
             <MultiSelect

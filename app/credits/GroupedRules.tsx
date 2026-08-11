@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { ChevronRight, Search, Plus, Trash2, Building2, Layers, Calculator } from "lucide-react";
 import { useToast } from "../components/Toast";
+import { useIsSuperAdmin } from "../components/AuthGate";
 import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
 import {
@@ -52,6 +53,10 @@ export default function GroupedRules({
   onChanged: () => void;
 }) {
   const { toast } = useToast();
+  // Credit rules are university-wide configuration. An institute's Student Cell gets its own
+  // branch of the tree to read - useful for checking what a paper is worth - but the backend
+  // refuses every write here, so the controls are not offered.
+  const readOnly = !useIsSuperAdmin();
   const [search, setSearch] = useState("");
   // Keys the user has flipped away from their level's default. Schools default open so the page
   // reads as an overview; programmes default closed, because four of them open at once is the
@@ -132,12 +137,14 @@ export default function GroupedRules({
               {shown} of {data.totalPapers}
             </span>
           )}
-          <button
-            onClick={() => setAdding((v) => !v)}
-            className="inline-flex items-center gap-1.5 text-[13px] font-bold text-primary hover:underline"
-          >
-            <Plus className="w-4 h-4" /> Add paper code
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => setAdding((v) => !v)}
+              className="inline-flex items-center gap-1.5 text-[13px] font-bold text-primary hover:underline"
+            >
+              <Plus className="w-4 h-4" /> Add paper code
+            </button>
+          )}
         </div>
       </div>
 
@@ -321,6 +328,7 @@ function ProgramSection({
 
 function PaperRow({ paper, onChanged }: { paper: GroupedPaper; onChanged: () => void }) {
   const { toast } = useToast();
+  const readOnly = !useIsSuperAdmin();
   const [credits, setCredits] = useState(String(paper.credits));
   const [note, setNote] = useState(paper.note ?? "");
   const [saving, setSaving] = useState(false);
@@ -398,42 +406,52 @@ function PaperRow({ paper, onChanged }: { paper: GroupedPaper; onChanged: () => 
         )}
       </td>
       <td className="px-4 py-2.5">
-        <input
-          type="number"
-          min={0}
-          value={credits}
-          onChange={(e) => setCredits(e.target.value)}
-          className={`${INPUT} w-20`}
-        />
+        {readOnly ? (
+          <span className="text-[13px] tabular-nums">{paper.credits}</span>
+        ) : (
+          <input
+            type="number"
+            min={0}
+            value={credits}
+            onChange={(e) => setCredits(e.target.value)}
+            className={`${INPUT} w-20`}
+          />
+        )}
       </td>
       <td className="px-4 py-2.5">
-        <input
-          type="text"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder={paper.adminEdited ? "—" : "imported default"}
-          className={`${INPUT} w-full max-w-[14rem]`}
-        />
+        {readOnly ? (
+          <span className="text-[13px] text-muted">{paper.note || "—"}</span>
+        ) : (
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={paper.adminEdited ? "—" : "imported default"}
+            className={`${INPUT} w-full max-w-[14rem]`}
+          />
+        )}
       </td>
       <td className="px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          {dirty && (
+        {!readOnly && (
+          <div className="flex items-center gap-3">
+            {dirty && (
+              <button
+                onClick={save}
+                disabled={saving}
+                className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            )}
             <button
-              onClick={save}
-              disabled={saving}
-              className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
+              onClick={remove}
+              aria-label={`Delete ${paper.paperCode}`}
+              className="text-muted/50 hover:text-danger transition-colors"
             >
-              {saving ? "Saving…" : "Save"}
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
-          )}
-          <button
-            onClick={remove}
-            aria-label={`Delete ${paper.paperCode}`}
-            className="text-muted/50 hover:text-danger transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
+          </div>
+        )}
       </td>
     </tr>
   );

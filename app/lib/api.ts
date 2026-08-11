@@ -7,6 +7,7 @@ export const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8
 
 /** Shared with lib/auth.ts, which owns writing the session; this module only reads it. */
 export const TOKEN_KEY = "ipuone.admin.token";
+export const SESSION_KEY = "ipuone.admin.session";
 
 function authHeaders(init?: RequestInit): HeadersInit {
   const headers = new Headers(init?.headers);
@@ -23,9 +24,12 @@ function authHeaders(init?: RequestInit): HeadersInit {
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(input, { ...init, headers: authHeaders(init) });
 
-  if ((res.status === 401 || res.status === 403) && typeof window !== "undefined") {
+  // 401 means the session is gone; 403 means this account may not have what it asked for, which
+  // is not a reason to sign it out — an institute admin poking at another institute's record
+  // should see the error, not be bounced to the login screen.
+  if (res.status === 401 && typeof window !== "undefined") {
     window.sessionStorage.removeItem(TOKEN_KEY);
-    window.sessionStorage.removeItem("ipuone.admin.email");
+    window.sessionStorage.removeItem(SESSION_KEY);
     if (!window.location.pathname.startsWith("/login")) {
       window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
     }
@@ -106,6 +110,90 @@ export interface StudentProfile {
   contactNumber: string | null;
   email: string | null;
   profileImage: string | null;
+}
+
+// ===== Admin account types =====
+/**
+ * SUPER_ADMIN is the university-level operator: every institute, every page, and the only role
+ * that can manage accounts. INSTITUTE_ADMIN is one institute's Student Cell — the same portal
+ * with every read narrowed to the institutes assigned to that account.
+ */
+export type AdminRole = "SUPER_ADMIN" | "INSTITUTE_ADMIN";
+
+export interface AdminInstitute {
+  instituteCode: string;
+  instituteName: string;
+  shortName: string | null;
+}
+
+/** Who the portal is signed in as. Shapes the UI; the backend does the enforcing. */
+export interface AdminSession {
+  id: string;
+  email: string;
+  displayName: string;
+  role: AdminRole;
+  institutes: AdminInstitute[];
+}
+
+export interface AdminUser extends AdminSession {
+  active: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminUserCreate {
+  email: string;
+  displayName: string;
+  password: string;
+  role: AdminRole;
+  instituteCodes: string[];
+}
+
+export interface AdminUserUpdate {
+  displayName?: string;
+  role?: AdminRole;
+  instituteCodes?: string[];
+  active?: boolean;
+}
+
+export async function fetchAdmins(): Promise<AdminUser[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/admins`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch admins: ${res.status}`));
+  return res.json();
+}
+
+export async function createAdmin(admin: AdminUserCreate): Promise<AdminUser> {
+  const res = await apiFetch(`${API_BASE}/api/admin/admins`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(admin),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to create admin: ${res.status}`));
+  return res.json();
+}
+
+export async function updateAdmin(id: string, update: AdminUserUpdate): Promise<AdminUser> {
+  const res = await apiFetch(`${API_BASE}/api/admin/admins/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update admin: ${res.status}`));
+  return res.json();
+}
+
+export async function setAdminPassword(id: string, password: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/admin/admins/${id}/password`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to set password: ${res.status}`));
+}
+
+export async function deleteAdmin(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/admin/admins/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete admin: ${res.status}`));
 }
 
 // ===== Course types =====
