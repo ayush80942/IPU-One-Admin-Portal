@@ -4,7 +4,7 @@ import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Lock, Mail } from "lucide-react";
-import { login, storeSession } from "../lib/auth";
+import { login } from "../lib/auth";
 
 function LoginForm() {
   const router = useRouter();
@@ -19,8 +19,7 @@ function LoginForm() {
     setBusy(true);
     setError(null);
     try {
-      const session = await login(email, password);
-      storeSession(session.token, session.email);
+      await login(email, password);
       const next = params.get("next");
       // Only same-site paths: a full URL here would turn the sign-in screen into an open
       // redirect that could bounce an authenticated operator to an attacker's page.

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Calculator, AlertTriangle, Regex, Upload, X, Trash2 } from "lucide-react";
 import { useToast } from "../components/Toast";
+import { useIsSuperAdmin } from "../components/AuthGate";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
 import EmptyState from "../components/EmptyState";
@@ -31,6 +32,10 @@ type Tab = "rules" | "patterns";
 
 export default function CreditsPage() {
   const { toast } = useToast();
+  // Credit rules apply university-wide, so only the university admin edits them. An institute's
+  // Student Cell gets a read-only view of its own branch of the tree, which is what they
+  // actually need it for - checking what a paper of theirs is worth.
+  const canEdit = useIsSuperAdmin();
   const [grouped, setGrouped] = useState<GroupedCredits | null>(null);
   const [patterns, setPatterns] = useState<CreditPattern[]>([]);
   const [unmapped, setUnmapped] = useState<UnmappedPaper[]>([]);
@@ -44,8 +49,8 @@ export default function CreditsPage() {
     try {
       const [g, p, u] = await Promise.all([
         fetchGroupedCreditRules(),
-        fetchCreditPatterns(),
-        fetchUnmappedPapers(),
+        canEdit ? fetchCreditPatterns() : Promise.resolve([]),
+        canEdit ? fetchUnmappedPapers() : Promise.resolve([]),
       ]);
       setGrouped(g);
       setPatterns(p);
@@ -55,7 +60,7 @@ export default function CreditsPage() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, canEdit]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -95,7 +100,11 @@ export default function CreditsPage() {
     <div>
       <PageHeader
         title="Credits"
-        subtitle="Credit weight per paper code — this drives every SGPA and CGPA in the app. Papers are grouped by school, programme and semester from the published scheme and from imported results. Edits apply to new imports immediately; publish to apply them to students who have already imported."
+        subtitle={
+          canEdit
+            ? "Credit weight per paper code — this drives every SGPA and CGPA in the app. Papers are grouped by school, programme and semester from the published scheme and from imported results. Edits apply to new imports immediately; publish to apply them to students who have already imported."
+            : "Credit weight per paper code for your institute — this drives every SGPA and CGPA in the app. Read-only: credit rules are set university-wide."
+        }
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -111,20 +120,24 @@ export default function CreditsPage() {
                 : "All placed by school & programme"
           }
         />
-        <StatTile value={loading ? "—" : patterns.filter((p) => p.active).length} label="Active Patterns" color="violet" icon={Regex} />
-        <StatTile
-          value={loading ? "—" : zeroCreditPapers}
-          label="Counting For Zero"
-          color={zeroCreditPapers > 0 ? "danger" : "success"}
-          icon={AlertTriangle}
-          subLabel={zeroCreditPapers > 0 ? "Excluded from SGPA" : "Nothing unmapped"}
-        />
-        <StatTile
-          value={loading ? "—" : unmapped.length - zeroCreditPapers}
-          label="Credits Guessed"
-          color="orange"
-          subLabel="Matched a pattern, not an exact rule"
-        />
+        {canEdit && (
+          <>
+            <StatTile value={loading ? "—" : patterns.filter((p) => p.active).length} label="Active Patterns" color="violet" icon={Regex} />
+            <StatTile
+              value={loading ? "—" : zeroCreditPapers}
+              label="Counting For Zero"
+              color={zeroCreditPapers > 0 ? "danger" : "success"}
+              icon={AlertTriangle}
+              subLabel={zeroCreditPapers > 0 ? "Excluded from SGPA" : "Nothing unmapped"}
+            />
+            <StatTile
+              value={loading ? "—" : unmapped.length - zeroCreditPapers}
+              label="Credits Guessed"
+              color="orange"
+              subLabel="Matched a pattern, not an exact rule"
+            />
+          </>
+        )}
       </div>
 
       {/* Needs attention — only when there is something to act on. */}
@@ -163,6 +176,7 @@ export default function CreditsPage() {
       )}
 
       {/* Publish */}
+      {canEdit && (
       <div className="bg-surface border border-border rounded-2xl shadow-sm p-5 mb-6 flex items-center justify-between gap-4 flex-wrap">
         <div>
           <div className="text-[14px] font-bold text-foreground">Publish to existing results</div>
@@ -180,6 +194,7 @@ export default function CreditsPage() {
           {previewing ? "Checking…" : "Review & Publish"}
         </button>
       </div>
+      )}
 
       {/* Rules / patterns */}
       <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
@@ -188,9 +203,11 @@ export default function CreditsPage() {
             <TabButton active={tab === "rules"} onClick={() => setTab("rules")}>
               Paper Codes <span className="font-normal text-muted">{grouped?.totalPapers ?? 0}</span>
             </TabButton>
-            <TabButton active={tab === "patterns"} onClick={() => setTab("patterns")}>
-              Patterns <span className="font-normal text-muted">{patterns.length}</span>
-            </TabButton>
+            {canEdit && (
+              <TabButton active={tab === "patterns"} onClick={() => setTab("patterns")}>
+                Patterns <span className="font-normal text-muted">{patterns.length}</span>
+              </TabButton>
+            )}
           </div>
           <button onClick={load} className="text-[13px] font-medium text-primary hover:underline shrink-0">
             Refresh
@@ -201,7 +218,7 @@ export default function CreditsPage() {
           <div className="p-6 space-y-3">
             {[1, 2, 3, 4, 5].map((i) => <div key={i} className="skeleton h-12 rounded-lg" />)}
           </div>
-        ) : tab === "rules" ? (
+        ) : tab === "rules" || !canEdit ? (
           grouped && <GroupedRules data={grouped} onChanged={load} />
         ) : (
           <PatternsTable patterns={patterns} onChanged={load} />

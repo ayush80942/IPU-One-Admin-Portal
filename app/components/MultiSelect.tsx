@@ -14,6 +14,9 @@ interface MultiSelectProps {
   onChange: (selected: string[]) => void;
   placeholder?: string;
   hint?: string;
+  /** Renders the current selection as read-only chips — used when the choice is not the
+   *  operator's to make (an institute admin's notices always target their own institute). */
+  disabled?: boolean;
 }
 
 export default function MultiSelect({
@@ -23,6 +26,7 @@ export default function MultiSelect({
   onChange,
   placeholder = "Select…",
   hint,
+  disabled = false,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -74,9 +78,14 @@ export default function MultiSelect({
       {/* Trigger */}
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setOpen(!open)}
         className={`flex items-center justify-between w-full border rounded-lg px-3 py-2.5 text-[14px] text-left transition-colors bg-background ${
-          open ? "border-primary ring-1 ring-primary/20" : "border-border hover:border-primary/40"
+          disabled
+            ? "border-border opacity-60 cursor-not-allowed"
+            : open
+              ? "border-primary ring-1 ring-primary/20"
+              : "border-border hover:border-primary/40"
         }`}
       >
         <span className={selected.length === 0 ? "text-muted" : "text-foreground truncate"}>
@@ -98,7 +107,7 @@ export default function MultiSelect({
       </button>
 
       {/* Dropdown */}
-      {open && (
+      {open && !disabled && (
         <div className="relative z-50">
           <div className="absolute top-0 left-0 right-0 bg-surface border border-border rounded-xl shadow-lg overflow-hidden dropdown-enter">
             {/* Search */}
@@ -191,13 +200,15 @@ export default function MultiSelect({
                 className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold bg-primary-faint text-primary rounded-md"
               >
                 {opt?.label || v}
-                <button
-                  type="button"
-                  onClick={() => toggle(v)}
-                  className="hover:text-danger transition-colors"
-                >
-                  ×
-                </button>
+                {!disabled && (
+                  <button
+                    type="button"
+                    onClick={() => toggle(v)}
+                    className="hover:text-danger transition-colors"
+                  >
+                    ×
+                  </button>
+                )}
               </span>
             );
           })}

@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { Users, FileCheck2, Megaphone, GraduationCap, Landmark, Receipt, ArrowRight } from "lucide-react";
+import { Users, FileCheck2, Megaphone, GraduationCap, Landmark, Receipt, ShieldCheck, ArrowRight } from "lucide-react";
 import { useToast } from "./components/Toast";
+import { useAdminSession } from "./components/AuthGate";
 import PageHeader from "./components/PageHeader";
 import StatTile from "./components/StatTile";
 import Pill from "./components/Pill";
@@ -18,18 +19,22 @@ import {
   Course,
 } from "./lib/api";
 import { categoryTaxonomy } from "./lib/noticeTaxonomy";
+import { instituteLabel } from "./lib/auth";
 
 const QUICK_LINKS = [
   { href: "/students", label: "Students", description: "View the registered student directory", icon: Users },
   { href: "/documents", label: "Documents", description: "Review submitted documents", icon: FileCheck2 },
   { href: "/fees", label: "Fee Payments", description: "Verify proofs and chase non-payers", icon: Receipt },
   { href: "/notices", label: "Notices", description: "Publish and manage notices", icon: Megaphone },
-  { href: "/courses", label: "Courses", description: "Set course durations", icon: GraduationCap },
-  { href: "/institutes", label: "Institutes", description: "Set institute short names", icon: Landmark },
+  { href: "/courses", label: "Courses", description: "Set course durations", icon: GraduationCap, superOnly: true },
+  { href: "/institutes", label: "Institutes", description: "Set institute short names", icon: Landmark, superOnly: true },
+  { href: "/admins", label: "Admins", description: "Create student cell accounts", icon: ShieldCheck, superOnly: true },
 ];
 
 export default function DashboardPage() {
   const { toast } = useToast();
+  const session = useAdminSession();
+  const isSuper = session?.role === "SUPER_ADMIN";
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [documents, setDocuments] = useState<DocumentResponse[]>([]);
@@ -99,7 +104,14 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle="Complete overview of the Student Cell portal." />
+      <PageHeader
+        title="Dashboard"
+        subtitle={
+          isSuper
+            ? "Complete overview of the portal, across every institute."
+            : `Overview for ${instituteLabel(session) || "your institute"}. Every figure below counts only your students.`
+        }
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -151,7 +163,7 @@ export default function DashboardPage() {
 
         {/* Quick links */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {QUICK_LINKS.map((link) => {
+          {QUICK_LINKS.filter((link) => isSuper || !link.superOnly).map((link) => {
             const Icon = link.icon;
             return (
               <Link
