@@ -1,26 +1,26 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { Calculator, AlertTriangle, Search, Regex, Upload, X, Plus, Trash2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Calculator, AlertTriangle, Regex, Upload, X, Trash2 } from "lucide-react";
 import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
 import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
+import GroupedRules from "./GroupedRules";
 import {
-  fetchCreditRules,
   saveCreditRule,
-  deleteCreditRule,
   fetchCreditPatterns,
   saveCreditPattern,
   deleteCreditPattern,
   fetchUnmappedPapers,
+  fetchGroupedCreditRules,
   previewCreditPublish,
   publishCredits,
-  CreditRule,
   CreditPattern,
   UnmappedPaper,
   PublishPreview,
+  GroupedCredits,
 } from "../lib/api";
 
 const TH = "px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide";
@@ -31,20 +31,23 @@ type Tab = "rules" | "patterns";
 
 export default function CreditsPage() {
   const { toast } = useToast();
-  const [rules, setRules] = useState<CreditRule[]>([]);
+  const [grouped, setGrouped] = useState<GroupedCredits | null>(null);
   const [patterns, setPatterns] = useState<CreditPattern[]>([]);
   const [unmapped, setUnmapped] = useState<UnmappedPaper[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("rules");
-  const [search, setSearch] = useState("");
   const [preview, setPreview] = useState<PublishPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [r, p, u] = await Promise.all([fetchCreditRules(), fetchCreditPatterns(), fetchUnmappedPapers()]);
-      setRules(r);
+      const [g, p, u] = await Promise.all([
+        fetchGroupedCreditRules(),
+        fetchCreditPatterns(),
+        fetchUnmappedPapers(),
+      ]);
+      setGrouped(g);
       setPatterns(p);
       setUnmapped(u);
     } catch (err) {
@@ -56,13 +59,10 @@ export default function CreditsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const filteredRules = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return rules;
-    return rules.filter((r) => r.paperCode.toLowerCase().includes(q) || r.note?.toLowerCase().includes(q));
-  }, [rules, search]);
-
   const zeroCreditPapers = unmapped.filter((u) => u.creditSource === "NONE").length;
+  const unplacedPapers = grouped
+    ? grouped.totalPapers - grouped.placedPapers
+    : 0;
 
   const openPreview = async () => {
     setPreviewing(true);
@@ -95,11 +95,22 @@ export default function CreditsPage() {
     <div>
       <PageHeader
         title="Credits"
-        subtitle="Credit weight per paper code — this drives every SGPA and CGPA in the app. Edits apply to new imports immediately; publish to apply them to students who have already imported."
+        subtitle="Credit weight per paper code — this drives every SGPA and CGPA in the app. Papers are grouped by school, programme and semester from the published scheme and from imported results. Edits apply to new imports immediately; publish to apply them to students who have already imported."
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <StatTile value={loading ? "—" : rules.length} label="Paper Codes Mapped" icon={Calculator} />
+        <StatTile
+          value={loading || !grouped ? "—" : grouped.totalPapers}
+          label="Paper Codes Mapped"
+          icon={Calculator}
+          subLabel={
+            loading || !grouped
+              ? undefined
+              : unplacedPapers > 0
+                ? `${unplacedPapers} not placed under a programme`
+                : "All placed by school & programme"
+          }
+        />
         <StatTile value={loading ? "—" : patterns.filter((p) => p.active).length} label="Active Patterns" color="violet" icon={Regex} />
         <StatTile
           value={loading ? "—" : zeroCreditPapers}
@@ -175,7 +186,7 @@ export default function CreditsPage() {
         <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-1">
             <TabButton active={tab === "rules"} onClick={() => setTab("rules")}>
-              Paper Codes <span className="font-normal text-muted">{rules.length}</span>
+              Paper Codes <span className="font-normal text-muted">{grouped?.totalPapers ?? 0}</span>
             </TabButton>
             <TabButton active={tab === "patterns"} onClick={() => setTab("patterns")}>
               Patterns <span className="font-normal text-muted">{patterns.length}</span>
@@ -191,13 +202,7 @@ export default function CreditsPage() {
             {[1, 2, 3, 4, 5].map((i) => <div key={i} className="skeleton h-12 rounded-lg" />)}
           </div>
         ) : tab === "rules" ? (
-          <RulesTable
-            rules={filteredRules}
-            total={rules.length}
-            search={search}
-            onSearch={setSearch}
-            onChanged={load}
-          />
+          grouped && <GroupedRules data={grouped} onChanged={load} />
         ) : (
           <PatternsTable patterns={patterns} onChanged={load} />
         )}
@@ -274,187 +279,6 @@ function UnmappedRow({ paper, onSaved }: { paper: UnmappedPaper; onSaved: () => 
               {saving ? "Saving…" : "Save"}
             </button>
           )}
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function RulesTable({
-  rules,
-  total,
-  search,
-  onSearch,
-  onChanged,
-}: {
-  rules: CreditRule[];
-  total: number;
-  search: string;
-  onSearch: (v: string) => void;
-  onChanged: () => void;
-}) {
-  const { toast } = useToast();
-  const [adding, setAdding] = useState(false);
-  const [newCode, setNewCode] = useState("");
-  const [newCredits, setNewCredits] = useState("");
-
-  const addRule = async () => {
-    try {
-      await saveCreditRule(newCode.trim().toUpperCase(), Number(newCredits));
-      toast(`Added ${newCode.trim().toUpperCase()}`, "success");
-      setNewCode("");
-      setNewCredits("");
-      setAdding(false);
-      onChanged();
-    } catch (err) {
-      toast(`Failed to add: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    }
-  };
-
-  return (
-    <>
-      <div className="px-6 py-3 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-        <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder="Search paper code…"
-            className="w-full pl-9 pr-4 py-2 border border-border rounded-lg text-[13px] bg-background focus:outline-none focus:border-primary"
-          />
-        </div>
-        <div className="flex items-center gap-3">
-          {search.trim() && <span className="text-[12px] text-muted">{rules.length} of {total}</span>}
-          <button
-            onClick={() => setAdding((v) => !v)}
-            className="inline-flex items-center gap-1.5 text-[13px] font-bold text-primary hover:underline"
-          >
-            <Plus className="w-4 h-4" /> Add paper code
-          </button>
-        </div>
-      </div>
-
-      {adding && (
-        <div className="px-6 py-3 border-b border-border bg-background flex items-center gap-3 flex-wrap">
-          <input
-            type="text"
-            value={newCode}
-            onChange={(e) => setNewCode(e.target.value)}
-            placeholder="Paper code e.g. ARD299"
-            className={`${INPUT} font-mono w-52`}
-          />
-          <input
-            type="number"
-            min={0}
-            value={newCredits}
-            onChange={(e) => setNewCredits(e.target.value)}
-            placeholder="Credits"
-            className={`${INPUT} w-24`}
-          />
-          <button
-            onClick={addRule}
-            disabled={!newCode.trim() || newCredits.trim() === ""}
-            className="text-[12px] font-bold text-primary hover:underline disabled:opacity-40"
-          >
-            Save
-          </button>
-          <button onClick={() => setAdding(false)} className="text-[12px] font-semibold text-muted hover:text-foreground">
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {rules.length === 0 ? (
-        <EmptyState icon={Calculator} message={search.trim() ? "No paper code matches that search." : "No credit rules yet."} />
-      ) : (
-        <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
-          <table className="w-full text-[13.5px]">
-            <thead>
-              <tr className="bg-primary-faint sticky top-0 z-10">
-                <th className={TH}>Paper Code</th>
-                <th className={TH}>Credits</th>
-                <th className={TH}>Note</th>
-                <th className={TH}>Source</th>
-                <th className={`${TH} w-8`} />
-              </tr>
-            </thead>
-            <tbody>
-              {rules.map((rule) => (
-                <RuleRow key={rule.paperCode} rule={rule} onChanged={onChanged} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
-  );
-}
-
-function RuleRow({ rule, onChanged }: { rule: CreditRule; onChanged: () => void }) {
-  const { toast } = useToast();
-  const [credits, setCredits] = useState(String(rule.credits));
-  const [note, setNote] = useState(rule.note ?? "");
-  const [saving, setSaving] = useState(false);
-
-  const dirty = credits !== String(rule.credits) || note !== (rule.note ?? "");
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await saveCreditRule(rule.paperCode, Number(credits), note.trim() || null);
-      toast(`${rule.paperCode} updated`, "success");
-      onChanged();
-    } catch (err) {
-      toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const remove = async () => {
-    if (!confirm(`Delete the credit rule for ${rule.paperCode}? It will fall back to the patterns, or to 0 credits.`)) return;
-    try {
-      await deleteCreditRule(rule.paperCode);
-      toast(`${rule.paperCode} deleted`, "success");
-      onChanged();
-    } catch (err) {
-      toast(`Failed to delete: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    }
-  };
-
-  return (
-    <tr className="hover:bg-background transition-colors border-b border-border last:border-b-0">
-      <td className="px-4 py-2.5 font-mono text-[13px]">{rule.paperCode}</td>
-      <td className="px-4 py-2.5">
-        <input type="number" min={0} value={credits} onChange={(e) => setCredits(e.target.value)} className={`${INPUT} w-20`} />
-      </td>
-      <td className="px-4 py-2.5">
-        <input
-          type="text"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="—"
-          className={`${INPUT} w-full max-w-xs`}
-        />
-      </td>
-      <td className="px-4 py-2.5">
-        {rule.adminEdited ? (
-          <Pill color="text-primary" colorFaint="bg-primary-faint">Admin set</Pill>
-        ) : (
-          <span className="text-[11px] text-muted">Imported default</span>
-        )}
-      </td>
-      <td className="px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          {dirty && (
-            <button onClick={save} disabled={saving} className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50">
-              {saving ? "Saving…" : "Save"}
-            </button>
-          )}
-          <button onClick={remove} aria-label={`Delete ${rule.paperCode}`} className="text-muted/50 hover:text-danger transition-colors">
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
         </div>
       </td>
     </tr>

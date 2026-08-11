@@ -406,9 +406,63 @@ export interface PublishPreview {
   papers: { paperCode: string; oldCredits: number; newCredits: number; subjectRows: number }[];
 }
 
+/**
+ * One paper in the grouped tree. `nameSource` says where the subject name came from:
+ * RESULT is the name students actually see, SCHEME is the syllabus PDF's provisional one.
+ */
+export interface GroupedPaper {
+  paperCode: string;
+  subjectName: string | null;
+  nameSource: "RESULT" | "SCHEME" | "NONE";
+  paperGroup: string | null;
+  credits: number;
+  note: string | null;
+  adminEdited: boolean;
+  programCodes: string[];
+  studentCount: number;
+  seenInResults: boolean;
+}
+
+export interface GroupedSemester {
+  semester: number | null;
+  paperCount: number;
+  papers: GroupedPaper[];
+}
+
+/** kind: a real programme, the papers several programmes share, or first year (sems 1-2). */
+export interface GroupedProgram {
+  programCode: string | null;
+  programName: string | null;
+  shortName: string | null;
+  kind: "PROGRAM" | "SHARED" | "FIRST_YEAR";
+  paperCount: number;
+  semesters: GroupedSemester[];
+}
+
+export interface GroupedSchool {
+  instituteCode: string | null;
+  instituteName: string;
+  shortName: string | null;
+  unknown: boolean;
+  paperCount: number;
+  programs: GroupedProgram[];
+}
+
+export interface GroupedCredits {
+  schools: GroupedSchool[];
+  totalPapers: number;
+  placedPapers: number;
+}
+
 export async function fetchCreditRules(): Promise<CreditRule[]> {
   const res = await apiFetch(`${API_BASE}/api/admin/credits/rules`);
   if (!res.ok) throw new Error(`Failed to fetch credit rules: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchGroupedCreditRules(): Promise<GroupedCredits> {
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/rules/grouped`);
+  if (!res.ok) throw new Error(`Failed to fetch grouped credit rules: ${res.status}`);
   return res.json();
 }
 
