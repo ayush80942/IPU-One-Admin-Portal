@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { CircleCheck, CircleX, Download, ExternalLink } from "lucide-react";
+import { CircleCheck, CircleX, Download, ExternalLink, FileWarning } from "lucide-react";
 import { useToast } from "./Toast";
 import Pill from "./Pill";
 import DetailDialog, { DetailField } from "./DetailDialog";
+import { useAuthedFileUrl } from "./AuthedFile";
 import {
   fetchFeeSubmission,
   reviewFeeSubmission,
-  resolveFileUrl,
   FeeSubmissionDetail,
   FeeTransaction,
 } from "../lib/api";
@@ -22,8 +22,33 @@ import {
 } from "../lib/fees";
 import { academicYearLabel } from "../lib/academicYear";
 
-function ReceiptPreview({ transaction }: { transaction: FeeTransaction }) {
-  const url = resolveFileUrl(transaction.fileUrl);
+// Receipts are served from /api/admin/**, which needs the admin bearer token — a URL the browser
+// resolves itself (an img src, an iframe src, an anchor href) never carries it and comes back
+// 401. So the bytes are fetched once per transaction in TransactionCard and everything here
+// renders from the resulting object URL.
+function ReceiptPreview({
+  transaction,
+  url,
+  error,
+  loading,
+}: {
+  transaction: FeeTransaction;
+  url: string | null;
+  error: string | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return <div className="skeleton w-full h-[240px] rounded-lg" />;
+  }
+
+  if (error || !url) {
+    return (
+      <div className="flex items-center justify-center gap-2 h-24 rounded-lg border border-border bg-background text-[13px] text-muted">
+        <FileWarning className="w-4 h-4" />
+        Receipt could not be loaded
+      </div>
+    );
+  }
 
   if (transaction.contentType === "application/pdf") {
     return (
@@ -49,8 +74,7 @@ function ReceiptPreview({ transaction }: { transaction: FeeTransaction }) {
   return (
     <a
       href={url}
-      target="_blank"
-      rel="noopener noreferrer"
+      download
       className="flex items-center justify-center gap-2 h-24 rounded-lg border border-border bg-background text-[13px] font-medium text-primary hover:underline"
     >
       <Download className="w-4 h-4" />
@@ -60,6 +84,9 @@ function ReceiptPreview({ transaction }: { transaction: FeeTransaction }) {
 }
 
 function TransactionCard({ transaction, index, total }: { transaction: FeeTransaction; index: number; total: number }) {
+  // One fetch per transaction, shared by the preview and the "Open receipt" link below it.
+  const file = useAuthedFileUrl(transaction.fileUrl);
+
   return (
     <div className="border border-border rounded-xl overflow-hidden">
       <div className="px-4 py-3 bg-background border-b border-border flex items-center justify-between gap-3 flex-wrap">
@@ -84,18 +111,20 @@ function TransactionCard({ transaction, index, total }: { transaction: FeeTransa
           <DetailField label="Uploaded" value={new Date(transaction.uploadedAt).toLocaleString()} />
         </div>
 
-        <ReceiptPreview transaction={transaction} />
+        <ReceiptPreview transaction={transaction} url={file.url} error={file.error} loading={file.loading} />
 
         <div className="flex items-center justify-between mt-2">
           <span className="text-[11px] text-muted">{formatFileSize(transaction.fileSizeBytes)}</span>
-          <a
-            href={resolveFileUrl(transaction.fileUrl)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[12px] font-medium text-primary hover:underline inline-flex items-center gap-1"
-          >
-            Open receipt <ExternalLink className="w-3 h-3" />
-          </a>
+          {file.url && (
+            <a
+              href={file.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[12px] font-medium text-primary hover:underline inline-flex items-center gap-1"
+            >
+              Open receipt <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
         </div>
       </div>
     </div>

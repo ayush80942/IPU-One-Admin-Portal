@@ -37,6 +37,16 @@ function programLabel(program: GroupedProgram) {
   return program.programCode ? `${program.programCode} — ${name}` : (name ?? "");
 }
 
+/** Stable identity for a school. The synthetic "not identified" node carries no code. */
+function schoolKey(school: GroupedSchool) {
+  return school.instituteCode ?? "__unplaced";
+}
+
+function schoolLabel(school: GroupedSchool) {
+  if (school.unknown) return school.instituteName;
+  return school.shortName ? `${school.shortName} — ${school.instituteName}` : school.instituteName;
+}
+
 function matches(paper: GroupedPaper, query: string) {
   if (!query) return true;
   return (
@@ -58,10 +68,12 @@ export default function GroupedRules({
   // refuses every write here, so the controls are not offered.
   const readOnly = !useIsSuperAdmin();
   const [search, setSearch] = useState("");
-  // Keys the user has flipped away from their level's default. Schools default open so the page
-  // reads as an overview; programmes default closed, because four of them open at once is the
-  // wall of rows this grouping exists to break up.
+  // Keys the user has flipped away from the default. Programmes default closed, because four of
+  // them open at once is the wall of rows this grouping exists to break up.
   const [toggled, setToggled] = useState<Set<string>>(new Set());
+  // Which school the tree below is showing. The backend already hands an institute admin nothing
+  // but their own schools, so this narrows what is on screen — it is not a permission boundary.
+  const [selectedSchool, setSelectedSchool] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [newCode, setNewCode] = useState("");
   const [newCredits, setNewCredits] = useState("");
@@ -92,6 +104,10 @@ export default function GroupedRules({
 
   const shown = schools.reduce((n, s) => n + s.paperCount, 0);
 
+  // Derived rather than stored, so a search that empties the chosen school falls through to one
+  // that still has matches instead of showing an empty tree and no explanation.
+  const school = schools.find((s) => schoolKey(s) === selectedSchool) ?? schools[0] ?? null;
+
   const addRule = async () => {
     const code = newCode.trim().toUpperCase();
     try {
@@ -120,6 +136,37 @@ export default function GroupedRules({
 
   return (
     <>
+      {/* School first, then everything below is that school's own tree. Credits are university-wide
+          configuration, but a paper only means anything inside the programme that lists it, so the
+          school is the level worth choosing rather than scrolling past. */}
+      <div className="px-6 py-3.5 border-b border-border flex items-center gap-3 flex-wrap bg-background">
+        <Building2 className="w-4 h-4 text-primary shrink-0" />
+        <label htmlFor="credits-school" className="text-[11px] font-bold text-muted uppercase tracking-wide">
+          School
+        </label>
+        <select
+          id="credits-school"
+          value={school ? schoolKey(school) : ""}
+          onChange={(e) => setSelectedSchool(e.target.value)}
+          disabled={schools.length === 0}
+          className="px-3 py-2 border border-border rounded-lg text-[13.5px] font-bold text-foreground bg-surface focus:outline-none focus:border-primary max-w-full disabled:opacity-50"
+        >
+          {schools.length === 0 && <option value="">No schools to show</option>}
+          {schools.map((s) => (
+            <option key={schoolKey(s)} value={schoolKey(s)}>
+              {schoolLabel(s)} ({s.paperCount})
+            </option>
+          ))}
+        </select>
+        {school && (
+          <span className="text-[12px] text-muted">
+            {school.paperCount} paper{school.paperCount === 1 ? "" : "s"}
+            {" · "}
+            {school.programs.length} section{school.programs.length === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+
       <div className="px-6 py-3 border-b border-border flex items-center justify-between gap-3 flex-wrap">
         <div className="relative max-w-xs flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
@@ -134,7 +181,7 @@ export default function GroupedRules({
         <div className="flex items-center gap-3">
           {query && (
             <span className="text-[12px] text-muted">
-              {shown} of {data.totalPapers}
+              {shown} of {data.totalPapers} across {schools.length} school{schools.length === 1 ? "" : "s"}
             </span>
           )}
           {!readOnly && (
@@ -181,28 +228,19 @@ export default function GroupedRules({
         </div>
       )}
 
-      {schools.length === 0 ? (
+      {!school ? (
         <EmptyState
           icon={Calculator}
           message={query ? "No paper code or subject matches that search." : "No credit rules yet."}
         />
       ) : (
-        <div>
-          {schools.map((school) => (
-            <SchoolSection
-              key={school.instituteCode ?? "__unplaced"}
-              school={school}
-              isOpen={isOpen}
-              onToggle={toggle}
-              onChanged={onChanged}
-            />
-          ))}
-        </div>
+        <SchoolSection school={school} isOpen={isOpen} onToggle={toggle} onChanged={onChanged} />
       )}
     </>
   );
 }
 
+/** The selected school's programmes. The school itself is chosen above, not expanded here. */
 function SchoolSection({
   school,
   isOpen,
@@ -214,49 +252,32 @@ function SchoolSection({
   onToggle: (key: string) => void;
   onChanged: () => void;
 }) {
-  const key = `school:${school.instituteCode ?? "__unplaced"}`;
-  const open = isOpen(key, true);
+  const key = `school:${schoolKey(school)}`;
+  // With one school on screen at a time, a handful of sections can all start open — the reason
+  // programmes default closed is a wall of rows, and three sections is not one. A school with
+  // more than that goes back to closed, so it still reads as a table of contents.
+  const programsDefaultOpen = school.programs.length <= 3;
 
   return (
-    <div className="border-b border-border last:border-b-0">
-      <button
-        onClick={() => onToggle(key)}
-        className="w-full px-6 py-3.5 flex items-center gap-3 hover:bg-background transition-colors text-left"
-      >
-        <ChevronRight className={`w-4 h-4 text-muted shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
-        <Building2 className="w-4 h-4 text-primary shrink-0" />
-        <span className="text-[14px] font-bold text-foreground">
-          {school.shortName ?? school.instituteName}
-        </span>
-        {school.shortName && (
-          <span className="text-[12px] text-muted truncate hidden sm:inline">{school.instituteName}</span>
-        )}
-        <span className="ml-auto text-[12px] text-muted tabular-nums shrink-0">
-          {school.paperCount} paper{school.paperCount === 1 ? "" : "s"}
-        </span>
-      </button>
-
-      {open && (
-        <div className="pb-2">
-          {school.unknown && (
-            <p className="px-6 pb-3 text-[12px] text-muted max-w-3xl">
-              Neither the published scheme nor any imported result places these papers under a
-              programme. They still count towards SGPA exactly as they always did — they are just
-              waiting on a student importing them, or on the scheme being added to the catalog.
-            </p>
-          )}
-          {school.programs.map((program) => (
-            <ProgramSection
-              key={`${key}:${program.kind}:${program.programCode ?? ""}`}
-              parentKey={key}
-              program={program}
-              isOpen={isOpen}
-              onToggle={onToggle}
-              onChanged={onChanged}
-            />
-          ))}
-        </div>
+    <div className="py-2">
+      {school.unknown && (
+        <p className="px-6 py-3 text-[12px] text-muted max-w-3xl">
+          Neither the published scheme nor any imported result places these papers under a
+          programme. They still count towards SGPA exactly as they always did — they are just
+          waiting on a student importing them, or on the scheme being added to the catalog.
+        </p>
       )}
+      {school.programs.map((program) => (
+        <ProgramSection
+          key={`${key}:${program.kind}:${program.programCode ?? ""}`}
+          parentKey={key}
+          program={program}
+          defaultOpen={programsDefaultOpen}
+          isOpen={isOpen}
+          onToggle={onToggle}
+          onChanged={onChanged}
+        />
+      ))}
     </div>
   );
 }
@@ -264,18 +285,20 @@ function SchoolSection({
 function ProgramSection({
   parentKey,
   program,
+  defaultOpen,
   isOpen,
   onToggle,
   onChanged,
 }: {
   parentKey: string;
   program: GroupedProgram;
+  defaultOpen: boolean;
   isOpen: (key: string, defaultOpen: boolean) => boolean;
   onToggle: (key: string) => void;
   onChanged: () => void;
 }) {
   const key = `${parentKey}:program:${program.kind}:${program.programCode ?? ""}`;
-  const open = isOpen(key, false);
+  const open = isOpen(key, defaultOpen);
 
   return (
     <div className="mx-6 mb-2 border border-border rounded-xl overflow-hidden">

@@ -102,8 +102,8 @@ export default function CreditsPage() {
         title="Credits"
         subtitle={
           canEdit
-            ? "Credit weight per paper code — this drives every SGPA and CGPA in the app. Papers are grouped by school, programme and semester from the published scheme and from imported results. Edits apply to new imports immediately; publish to apply them to students who have already imported."
-            : "Credit weight per paper code for your institute — this drives every SGPA and CGPA in the app. Read-only: credit rules are set university-wide."
+            ? "Credit weight per paper code — this drives every SGPA and CGPA in the app. Pick a school below, then work down its programmes and semesters; the placement comes from the published scheme and from imported results. Edits apply to new imports immediately; publish to apply them to students who have already imported."
+            : "Credit weight per paper code for your school — this drives every SGPA and CGPA in the app. Pick a school below, then work down its programmes and semesters. Read-only: credit rules are set university-wide."
         }
       />
 

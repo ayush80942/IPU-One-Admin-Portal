@@ -43,6 +43,22 @@ export function resolveFileUrl(fileUrl: string): string {
   return fileUrl.startsWith("http") ? fileUrl : `${API_BASE}${fileUrl}`;
 }
 
+/**
+ * Downloads a document or receipt and hands back an object URL that `<img>`, `<iframe>` and
+ * `<a download>` can all point at.
+ *
+ * <p>The file routes live under `/api/admin/**` and so require the admin bearer token, which a
+ * browser will not attach to a `src` or `href` it resolves itself — those requests arrive
+ * anonymous and come back 401, which is why previews rendered as broken images. Fetching the
+ * bytes through {@link apiFetch} is the only way the header gets sent; the caller owns the
+ * returned URL and must `URL.revokeObjectURL` it (see `useAuthedFileUrl`).
+ */
+export async function fetchFileObjectUrl(fileUrl: string): Promise<string> {
+  const res = await apiFetch(resolveFileUrl(fileUrl));
+  if (!res.ok) throw new Error(`Failed to load file: ${res.status}`);
+  return URL.createObjectURL(await res.blob());
+}
+
 // ===== Notice types =====
 export interface NoticeResponse {
   id: number;
@@ -213,6 +229,15 @@ export interface CourseUpdate {
   totalSemesters?: number | null;
 }
 
+/** Hand-entered programme, for one that exists before any student has imported it. */
+export interface CourseCreate {
+  programCode: string;
+  programName: string;
+  instituteCode: string;
+  shortName?: string | null;
+  totalSemesters?: number | null;
+}
+
 // ===== Institute types =====
 export interface Institute {
   instituteCode: string;
@@ -223,6 +248,13 @@ export interface Institute {
 }
 
 export interface InstituteUpdate {
+  shortName?: string | null;
+}
+
+/** Hand-entered school, for one that exists before any student has imported from it. */
+export interface InstituteCreate {
+  instituteCode: string;
+  instituteName: string;
   shortName?: string | null;
 }
 
@@ -302,6 +334,16 @@ export async function fetchCourses(): Promise<Course[]> {
   return res.json();
 }
 
+export async function createCourse(course: CourseCreate): Promise<Course> {
+  const res = await apiFetch(`${API_BASE}/api/admin/courses`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(course),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to create course: ${res.status}`));
+  return res.json();
+}
+
 export async function updateCourse(programCode: string, update: CourseUpdate): Promise<Course> {
   const res = await apiFetch(`${API_BASE}/api/admin/courses/${encodeURIComponent(programCode)}`, {
     method: "PUT",
@@ -315,6 +357,16 @@ export async function updateCourse(programCode: string, update: CourseUpdate): P
 export async function fetchInstitutes(): Promise<Institute[]> {
   const res = await apiFetch(`${API_BASE}/api/admin/institutes`);
   if (!res.ok) throw new Error(`Failed to fetch institutes: ${res.status}`);
+  return res.json();
+}
+
+export async function createInstitute(institute: InstituteCreate): Promise<Institute> {
+  const res = await apiFetch(`${API_BASE}/api/admin/institutes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(institute),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to create institute: ${res.status}`));
   return res.json();
 }
 

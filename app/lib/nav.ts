@@ -3,7 +3,6 @@ import {
   Megaphone,
   Users,
   FileCheck2,
-  GraduationCap,
   Landmark,
   Receipt,
   Calculator,
@@ -31,8 +30,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/documents", label: "Documents", icon: FileCheck2 },
   { href: "/fees", label: "Fee Payments", icon: Receipt },
   { href: "/credits", label: "Credits", icon: Calculator },
-  { href: "/courses", label: "Courses", icon: GraduationCap, superOnly: true },
-  { href: "/institutes", label: "Institutes", icon: Landmark, superOnly: true },
+  // Institutes and courses are one page with a view switch — a course cannot be created without
+  // naming its institute, so splitting them across two sidebar entries only made that awkward.
+  { href: "/institutes", label: "Institutes & Courses", icon: Landmark, superOnly: true },
   { href: "/admins", label: "Admins", icon: ShieldCheck, superOnly: true },
 ];
 

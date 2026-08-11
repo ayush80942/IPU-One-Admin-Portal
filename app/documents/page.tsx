@@ -8,7 +8,8 @@ import StatTile from "../components/StatTile";
 import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
 import DetailDialog, { DetailField } from "../components/DetailDialog";
-import { fetchDocuments, resolveFileUrl, DocumentResponse } from "../lib/api";
+import { AuthedImage } from "../components/AuthedFile";
+import { fetchDocuments, DocumentResponse } from "../lib/api";
 
 function typeLabel(type: string) {
   return type.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -90,9 +91,8 @@ export default function DocumentCollectionPage() {
                     className="hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer"
                   >
                     <td className="px-4 py-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={resolveFileUrl(d.fileUrl)}
+                      <AuthedImage
+                        fileUrl={d.fileUrl}
                         alt=""
                         className="w-12 h-12 rounded-lg object-cover border border-border"
                       />
@@ -120,11 +120,11 @@ export default function DocumentCollectionPage() {
           onClose={() => setSelected(null)}
           maxWidthClass="max-w-3xl"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={resolveFileUrl(selected.fileUrl)}
+          <AuthedImage
+            fileUrl={selected.fileUrl}
             alt="Document"
             className="w-full max-h-[60vh] object-contain rounded-lg border border-border bg-background mb-5"
+            fallbackClassName="w-full h-[40vh] rounded-lg mb-5"
           />
           <div className="grid grid-cols-2 gap-x-6 gap-y-4">
             <DetailField label="Student" value={selected.enrollmentNo} />
