@@ -516,7 +516,8 @@ export async function reviewFeeSubmission(
 export interface CreditRule {
   paperCode: string;
   credits: number;
-  note: string | null;
+  /** The admin-set name, or null when the page falls back to the result/scheme name. */
+  subjectName: string | null;
   adminEdited: boolean;
   updatedAt: string | null;
 }
@@ -547,16 +548,16 @@ export interface PublishPreview {
 }
 
 /**
- * One paper in the grouped tree. `nameSource` says where the subject name came from:
- * RESULT is the name students actually see, SCHEME is the syllabus PDF's provisional one.
+ * One paper in the grouped tree. `nameSource` says where the subject name came from: ADMIN is
+ * one someone typed here and outranks the rest, RESULT is the name students actually see, and
+ * SCHEME is the syllabus PDF's provisional one.
  */
 export interface GroupedPaper {
   paperCode: string;
   subjectName: string | null;
-  nameSource: "RESULT" | "SCHEME" | "NONE";
+  nameSource: "ADMIN" | "RESULT" | "SCHEME" | "NONE";
   paperGroup: string | null;
   credits: number;
-  note: string | null;
   adminEdited: boolean;
   programCodes: string[];
   studentCount: number;
@@ -606,11 +607,22 @@ export async function fetchGroupedCreditRules(): Promise<GroupedCredits> {
   return res.json();
 }
 
-export async function saveCreditRule(paperCode: string, credits: number, note?: string | null): Promise<CreditRule> {
+/**
+ * `subjectName` is three-valued, matching the backend: omit it to leave the stored name alone,
+ * pass "" to clear it back to the result/scheme name, pass text to set it. Callers that only
+ * mean to change credits must omit it rather than sending null, or they wipe a name they never
+ * showed the user.
+ */
+export async function saveCreditRule(
+  paperCode: string,
+  credits: number,
+  subjectName?: string
+): Promise<CreditRule> {
   const res = await apiFetch(`${API_BASE}/api/admin/credits/rules`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ paperCode, credits, note: note ?? null }),
+    // JSON.stringify drops an undefined value, which is exactly the "leave it alone" case.
+    body: JSON.stringify({ paperCode, credits, subjectName }),
   });
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to save credit rule: ${res.status}`));
   return res.json();

@@ -76,6 +76,7 @@ export default function GroupedRules({
   const [selectedSchool, setSelectedSchool] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [newCode, setNewCode] = useState("");
+  const [newName, setNewName] = useState("");
   const [newCredits, setNewCredits] = useState("");
 
   const query = search.trim().toLowerCase();
@@ -111,9 +112,10 @@ export default function GroupedRules({
   const addRule = async () => {
     const code = newCode.trim().toUpperCase();
     try {
-      await saveCreditRule(code, Number(newCredits));
+      await saveCreditRule(code, Number(newCredits), newName.trim() || undefined);
       toast(`Added ${code}`, "success");
       setNewCode("");
+      setNewName("");
       setNewCredits("");
       setAdding(false);
       onChanged();
@@ -203,6 +205,13 @@ export default function GroupedRules({
             onChange={(e) => setNewCode(e.target.value)}
             placeholder="Paper code e.g. ARD299"
             className={`${INPUT} font-mono w-52`}
+          />
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Subject name (optional)"
+            className={`${INPUT} w-72`}
           />
           <input
             type="number"
@@ -330,9 +339,9 @@ function ProgramSection({
                 <thead>
                   <tr className="bg-primary-faint">
                     <th className={TH}>Paper</th>
-                    <th className={TH}>Subject</th>
+                    <th className={TH}>Subject Name</th>
                     <th className={TH}>Credits</th>
-                    <th className={TH}>Note</th>
+                    <th className={TH}>Students</th>
                     <th className={`${TH} w-8`} />
                   </tr>
                 </thead>
@@ -349,30 +358,56 @@ function ProgramSection({
   );
 }
 
+/**
+ * Where the name in the box came from. Only worth saying when it is not the admin's own: a
+ * scheme name is provisional, and an empty one is a gap somebody should fill.
+ */
+function NameSourceHint({ source }: { source: GroupedPaper["nameSource"] }) {
+  if (source === "ADMIN") return null;
+
+  const hint =
+    source === "SCHEME"
+      ? { text: "from scheme", title: "From the published scheme — no student has imported this paper yet" }
+      : source === "RESULT"
+        ? { text: "from results", title: "The name the university's result portal printed. Edit to override it." }
+        : { text: "unnamed", title: "No result and no scheme entry names this paper yet." };
+
+  return (
+    <div className="text-[11px] text-muted mt-0.5" title={hint.title}>
+      {hint.text}
+    </div>
+  );
+}
+
 function PaperRow({ paper, onChanged }: { paper: GroupedPaper; onChanged: () => void }) {
   const { toast } = useToast();
   const readOnly = !useIsSuperAdmin();
   const [credits, setCredits] = useState(String(paper.credits));
-  const [note, setNote] = useState(paper.note ?? "");
+  const [name, setName] = useState(paper.subjectName ?? "");
   const [saving, setSaving] = useState(false);
 
   // Saving a row, or publishing, reloads the tree underneath an open page. Without this the
   // inputs would keep showing what was typed before the reload and the Save link would stay
   // lit for a change that already landed. Adjusting during render rather than in an effect is
   // React's own recommendation for state that has to follow a prop.
-  const [syncedTo, setSyncedTo] = useState({ credits: paper.credits, note: paper.note });
-  if (syncedTo.credits !== paper.credits || syncedTo.note !== paper.note) {
-    setSyncedTo({ credits: paper.credits, note: paper.note });
+  const [syncedTo, setSyncedTo] = useState({ credits: paper.credits, subjectName: paper.subjectName });
+  if (syncedTo.credits !== paper.credits || syncedTo.subjectName !== paper.subjectName) {
+    setSyncedTo({ credits: paper.credits, subjectName: paper.subjectName });
     setCredits(String(paper.credits));
-    setNote(paper.note ?? "");
+    setName(paper.subjectName ?? "");
   }
 
-  const dirty = credits !== String(paper.credits) || note !== (paper.note ?? "");
+  const nameChanged = name !== (paper.subjectName ?? "");
+  const dirty = credits !== String(paper.credits) || nameChanged;
 
   const save = async () => {
     setSaving(true);
     try {
-      await saveCreditRule(paper.paperCode, Number(credits), note.trim() || null);
+      // Only send the name when it was actually edited. The box is pre-filled with whatever the
+      // tree resolved — often a result's or the scheme's name — so sending it unconditionally
+      // would quietly promote those to admin-set on any credits-only edit, and a later portal
+      // rename would then stop showing through.
+      await saveCreditRule(paper.paperCode, Number(credits), nameChanged ? name.trim() : undefined);
       toast(`${paper.paperCode} updated`, "success");
       onChanged();
     } catch (err) {
@@ -407,26 +442,18 @@ function PaperRow({ paper, onChanged }: { paper: GroupedPaper; onChanged: () => 
         </div>
       </td>
       <td className="px-4 py-2.5">
-        {paper.subjectName ? (
-          <div className="flex items-baseline gap-2">
-            <span className="text-[13px] text-foreground">{paper.subjectName}</span>
-            {paper.nameSource === "SCHEME" && (
-              <span
-                className="text-[11px] text-muted shrink-0"
-                title="From the published scheme — no student has imported this paper yet"
-              >
-                from scheme
-              </span>
-            )}
-          </div>
+        {readOnly ? (
+          <span className="text-[13px] text-foreground">{paper.subjectName || "—"}</span>
         ) : (
-          <span className="text-[12px] text-muted">—</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name this paper"
+            className={`${INPUT} w-full min-w-[16rem]`}
+          />
         )}
-        {paper.studentCount > 0 && (
-          <div className="text-[11px] text-muted mt-0.5 tabular-nums">
-            {paper.studentCount} student{paper.studentCount === 1 ? "" : "s"}
-          </div>
-        )}
+        <NameSourceHint source={paper.nameSource} />
       </td>
       <td className="px-4 py-2.5">
         {readOnly ? (
@@ -441,18 +468,8 @@ function PaperRow({ paper, onChanged }: { paper: GroupedPaper; onChanged: () => 
           />
         )}
       </td>
-      <td className="px-4 py-2.5">
-        {readOnly ? (
-          <span className="text-[13px] text-muted">{paper.note || "—"}</span>
-        ) : (
-          <input
-            type="text"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder={paper.adminEdited ? "—" : "imported default"}
-            className={`${INPUT} w-full max-w-[14rem]`}
-          />
-        )}
+      <td className="px-4 py-2.5 text-[12px] text-muted tabular-nums whitespace-nowrap">
+        {paper.studentCount > 0 ? paper.studentCount : "—"}
       </td>
       <td className="px-4 py-2.5">
         {!readOnly && (
