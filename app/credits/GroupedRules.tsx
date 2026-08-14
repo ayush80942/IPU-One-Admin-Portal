@@ -291,9 +291,9 @@ export default function GroupedRules({
   );
 }
 
-/** Papers this school's students hold that resolve to no exact rule yet — a regex guess or a
- *  silent zero. Kept as its own quick-action list rather than folded into the branch tree below,
- *  since these papers usually have no settled programme/semester home yet either. */
+/** Papers this school's students hold that have no exact credit rule yet, so they silently
+ *  count for zero. Kept as its own quick-action list rather than folded into the branch tree
+ *  below, since these papers usually have no settled programme/semester home yet either. */
 function NeedsAttentionSection({
   papers,
   readOnly,
@@ -360,18 +360,12 @@ function NeedsAttentionRow({
     }
   };
 
-  const zero = paper.creditSource === "NONE";
-
   return (
     <tr className="border-b border-border last:border-b-0 hover:bg-background transition-colors">
       <td className="px-4 py-3 font-mono text-[13px]">{paper.paperCode}</td>
       <td className="px-4 py-3 text-[12px] text-muted">{paper.subjectName || "—"}</td>
       <td className="px-4 py-3">
-        {zero ? (
-          <Pill color="text-danger" colorFaint="bg-danger-faint">0 — not counted</Pill>
-        ) : (
-          <Pill color="text-orange" colorFaint="bg-orange-faint">{paper.currentCredits} — guessed</Pill>
-        )}
+        <Pill color="text-danger" colorFaint="bg-danger-faint">0 — not counted</Pill>
       </td>
       <td className="px-4 py-3 tabular-nums">{paper.studentCount}</td>
       {!readOnly && (
@@ -569,7 +563,7 @@ function PaperRow({ paper, onChanged }: { paper: GroupedPaper; onChanged: () => 
   };
 
   const remove = async () => {
-    if (!confirm(`Delete the credit rule for ${paper.paperCode}? It will fall back to the patterns, or to 0 credits.`))
+    if (!confirm(`Delete the credit rule for ${paper.paperCode}? It will fall back to 0 credits.`))
       return;
     try {
       await deleteCreditRule(paper.paperCode);

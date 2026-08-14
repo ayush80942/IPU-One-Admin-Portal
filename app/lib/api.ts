@@ -522,15 +522,6 @@ export interface CreditRule {
   updatedAt: string | null;
 }
 
-export interface CreditPattern {
-  id: string;
-  regex: string;
-  credits: number;
-  description: string;
-  priority: number;
-  active: boolean;
-}
-
 export interface PublishPreview {
   subjectsChanged: number;
   semestersChanged: number;
@@ -571,14 +562,12 @@ export interface GroupedProgram {
   semesters: GroupedSemester[];
 }
 
-/** A paper this school's students hold that resolves to no exact rule — a regex guessed the
- *  credits (PATTERN) or nothing matched and it silently counts for zero (NONE). A code held by
- *  students of more than one institute appears in each of those institutes' lists. */
+/** A paper this school's students hold that has no exact credit rule — it silently counts for
+ *  zero. A code held by students of more than one institute appears in each of those
+ *  institutes' lists. */
 export interface NeedsAttentionPaper {
   paperCode: string;
   subjectName: string | null;
-  creditSource: "PATTERN" | "NONE";
-  currentCredits: number;
   studentCount: number;
 }
 
@@ -634,33 +623,6 @@ export async function saveCreditRule(
 export async function deleteCreditRule(paperCode: string): Promise<void> {
   const res = await apiFetch(`${API_BASE}/api/admin/credits/rules/${encodeURIComponent(paperCode)}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete credit rule: ${res.status}`));
-}
-
-export async function fetchCreditPatterns(): Promise<CreditPattern[]> {
-  const res = await apiFetch(`${API_BASE}/api/admin/credits/patterns`);
-  if (!res.ok) throw new Error(`Failed to fetch credit patterns: ${res.status}`);
-  return res.json();
-}
-
-export async function saveCreditPattern(
-  id: string | null,
-  update: Partial<Omit<CreditPattern, "id">>
-): Promise<CreditPattern> {
-  const res = await apiFetch(
-    id ? `${API_BASE}/api/admin/credits/patterns/${id}` : `${API_BASE}/api/admin/credits/patterns`,
-    {
-      method: id ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(update),
-    }
-  );
-  if (!res.ok) throw new Error(await errorMessage(res, `Failed to save pattern: ${res.status}`));
-  return res.json();
-}
-
-export async function deleteCreditPattern(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/admin/credits/patterns/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete pattern: ${res.status}`));
 }
 
 /** Dry run — writes nothing. */

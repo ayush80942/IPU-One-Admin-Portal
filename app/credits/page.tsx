@@ -1,28 +1,21 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Calculator, AlertTriangle, Regex, Upload, X, Trash2 } from "lucide-react";
+import { Calculator, AlertTriangle, Upload, X } from "lucide-react";
 import { useToast } from "../components/Toast";
 import { useIsSuperAdmin } from "../components/AuthGate";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
-import EmptyState from "../components/EmptyState";
 import GroupedRules from "./GroupedRules";
 import {
-  fetchCreditPatterns,
-  saveCreditPattern,
-  deleteCreditPattern,
   fetchGroupedCreditRules,
   previewCreditPublish,
   publishCredits,
-  CreditPattern,
   PublishPreview,
   GroupedCredits,
 } from "../lib/api";
 
 const TH = "px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide";
-
-type Tab = "rules" | "patterns";
 
 export default function CreditsPage() {
   const { toast } = useToast();
@@ -31,43 +24,29 @@ export default function CreditsPage() {
   // actually need it for - checking what a paper of theirs is worth.
   const canEdit = useIsSuperAdmin();
   const [grouped, setGrouped] = useState<GroupedCredits | null>(null);
-  const [patterns, setPatterns] = useState<CreditPattern[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>("rules");
   const [preview, setPreview] = useState<PublishPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [g, p] = await Promise.all([
-        fetchGroupedCreditRules(),
-        canEdit ? fetchCreditPatterns() : Promise.resolve([]),
-      ]);
-      setGrouped(g);
-      setPatterns(p);
+      setGrouped(await fetchGroupedCreditRules());
     } catch (err) {
       toast(`Failed to load credits: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
       setLoading(false);
     }
-  }, [toast, canEdit]);
+  }, [toast]);
 
   useEffect(() => { load(); }, [load]);
 
   // Needs-attention papers are scoped per school on the backend, so a code held across two
   // institutes is counted once per school there — dedup by paper code for a university-wide
   // headline number instead of double-counting it here.
-  const needsAttention = new Map<string, "PATTERN" | "NONE">();
-  for (const school of grouped?.schools ?? []) {
-    for (const paper of school.needsAttention) {
-      if (paper.creditSource === "NONE" || !needsAttention.has(paper.paperCode)) {
-        needsAttention.set(paper.paperCode, paper.creditSource);
-      }
-    }
-  }
-  const zeroCreditPapers = [...needsAttention.values()].filter((s) => s === "NONE").length;
-  const guessedCreditPapers = needsAttention.size - zeroCreditPapers;
+  const zeroCreditPapers = new Set(
+    (grouped?.schools ?? []).flatMap((s) => s.needsAttention.map((p) => p.paperCode))
+  ).size;
 
   const openPreview = async () => {
     setPreviewing(true);
@@ -107,7 +86,7 @@ export default function CreditsPage() {
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <StatTile
           value={loading || !grouped ? "—" : grouped.totalPapers}
           label="Paper Codes Mapped"
@@ -115,22 +94,13 @@ export default function CreditsPage() {
           subLabel="With an exact credit rule"
         />
         {canEdit && (
-          <>
-            <StatTile value={loading ? "—" : patterns.filter((p) => p.active).length} label="Active Patterns" color="violet" icon={Regex} />
-            <StatTile
-              value={loading ? "—" : zeroCreditPapers}
-              label="Counting For Zero"
-              color={zeroCreditPapers > 0 ? "danger" : "success"}
-              icon={AlertTriangle}
-              subLabel={zeroCreditPapers > 0 ? "Excluded from SGPA — see each school" : "Nothing unmapped"}
-            />
-            <StatTile
-              value={loading ? "—" : guessedCreditPapers}
-              label="Credits Guessed"
-              color="orange"
-              subLabel="Matched a pattern, not an exact rule"
-            />
-          </>
+          <StatTile
+            value={loading ? "—" : zeroCreditPapers}
+            label="Counting For Zero"
+            color={zeroCreditPapers > 0 ? "danger" : "success"}
+            icon={AlertTriangle}
+            subLabel={zeroCreditPapers > 0 ? "No exact rule — see each school" : "Nothing unmapped"}
+          />
         )}
       </div>
 
@@ -155,18 +125,10 @@ export default function CreditsPage() {
       </div>
       )}
 
-      {/* Rules / patterns */}
       <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-1">
-            <TabButton active={tab === "rules"} onClick={() => setTab("rules")}>
-              Paper Codes <span className="font-normal text-muted">{grouped?.totalPapers ?? 0}</span>
-            </TabButton>
-            {canEdit && (
-              <TabButton active={tab === "patterns"} onClick={() => setTab("patterns")}>
-                Patterns <span className="font-normal text-muted">{patterns.length}</span>
-              </TabButton>
-            )}
+          <div className="text-[14px] font-bold text-primary">
+            Paper Codes <span className="font-normal text-muted">{grouped?.totalPapers ?? 0}</span>
           </div>
           <button onClick={load} className="text-[13px] font-medium text-primary hover:underline shrink-0">
             Refresh
@@ -177,10 +139,8 @@ export default function CreditsPage() {
           <div className="p-6 space-y-3">
             {[1, 2, 3, 4, 5].map((i) => <div key={i} className="skeleton h-12 rounded-lg" />)}
           </div>
-        ) : tab === "rules" || !canEdit ? (
-          grouped && <GroupedRules data={grouped} onChanged={load} />
         ) : (
-          <PatternsTable patterns={patterns} onChanged={load} />
+          grouped && <GroupedRules data={grouped} onChanged={load} />
         )}
       </div>
 
@@ -188,90 +148,6 @@ export default function CreditsPage() {
         <PublishDialog preview={preview} onCancel={() => setPreview(null)} onConfirm={confirmPublish} />
       )}
     </div>
-  );
-}
-
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3.5 py-1.5 rounded-lg text-[13px] font-bold transition-colors ${
-        active ? "bg-primary-faint text-primary" : "text-muted hover:text-foreground"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function PatternsTable({ patterns, onChanged }: { patterns: CreditPattern[]; onChanged: () => void }) {
-  const { toast } = useToast();
-
-  const toggle = async (pattern: CreditPattern) => {
-    try {
-      await saveCreditPattern(pattern.id, { active: !pattern.active });
-      onChanged();
-    } catch (err) {
-      toast(`Failed to update: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    }
-  };
-
-  const remove = async (pattern: CreditPattern) => {
-    if (!confirm(`Delete the pattern ${pattern.regex}?`)) return;
-    try {
-      await deleteCreditPattern(pattern.id);
-      toast("Pattern deleted", "success");
-      onChanged();
-    } catch (err) {
-      toast(`Failed to delete: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    }
-  };
-
-  if (patterns.length === 0) {
-    return <EmptyState icon={Regex} message="No fallback patterns configured." />;
-  }
-
-  return (
-    <>
-      <p className="px-6 py-3 text-[12px] text-muted border-b border-border">
-        Used only when a paper code has no exact rule. Tried top to bottom — the first match wins, so
-        priority order decides the outcome when two patterns overlap.
-      </p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-[13.5px]">
-          <thead>
-            <tr className="bg-primary-faint">
-              <th className={TH}>Priority</th>
-              <th className={TH}>Pattern</th>
-              <th className={TH}>Credits</th>
-              <th className={TH}>Description</th>
-              <th className={TH}>Active</th>
-              <th className={`${TH} w-8`} />
-            </tr>
-          </thead>
-          <tbody>
-            {patterns.map((p) => (
-              <tr key={p.id} className={`hover:bg-background transition-colors border-b border-border last:border-b-0 ${p.active ? "" : "opacity-50"}`}>
-                <td className="px-4 py-2.5 tabular-nums text-muted">{p.priority}</td>
-                <td className="px-4 py-2.5 font-mono text-[12px]">{p.regex}</td>
-                <td className="px-4 py-2.5 tabular-nums font-semibold">{p.credits}</td>
-                <td className="px-4 py-2.5 text-[12px] text-muted">{p.description || "—"}</td>
-                <td className="px-4 py-2.5">
-                  <button onClick={() => toggle(p)} className="text-[12px] font-semibold text-primary hover:underline">
-                    {p.active ? "Disable" : "Enable"}
-                  </button>
-                </td>
-                <td className="px-4 py-2.5">
-                  <button onClick={() => remove(p)} aria-label="Delete pattern" className="text-muted/50 hover:text-danger transition-colors">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
   );
 }
 
