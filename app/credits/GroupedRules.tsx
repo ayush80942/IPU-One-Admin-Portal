@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { ChevronRight, Search, Plus, Trash2, Building2, Layers, Calculator } from "lucide-react";
+import { ChevronRight, Search, Plus, Trash2, Building2, Layers, Calculator, AlertTriangle } from "lucide-react";
 import { useToast } from "../components/Toast";
 import { useIsSuperAdmin } from "../components/AuthGate";
 import EmptyState from "../components/EmptyState";
@@ -13,6 +13,7 @@ import {
   GroupedSchool,
   GroupedProgram,
   GroupedPaper,
+  NeedsAttentionPaper,
 } from "../lib/api";
 
 const INPUT =
@@ -37,17 +38,27 @@ function programLabel(program: GroupedProgram) {
   return program.programCode ? `${program.programCode} — ${name}` : (name ?? "");
 }
 
-/** Stable identity for a school. The synthetic "not identified" node carries no code. */
+/** Stable identity for a school. There is no synthetic "not identified" chip any more — a paper
+ *  the university hasn't tied to a school yet isn't shown on this page at all. */
 function schoolKey(school: GroupedSchool) {
   return school.instituteCode ?? "__unplaced";
 }
 
-function schoolLabel(school: GroupedSchool) {
-  if (school.unknown) return school.instituteName;
-  return school.shortName ? `${school.shortName} — ${school.instituteName}` : school.instituteName;
+/** The chip label is deliberately just the short form — the full name is shown separately as
+ *  the section heading once a school is picked, not folded into the scroll strip. */
+function schoolChipLabel(school: GroupedSchool) {
+  return school.shortName || school.instituteCode || school.instituteName;
 }
 
-function matches(paper: GroupedPaper, query: string) {
+function matchesPaper(paper: GroupedPaper, query: string) {
+  if (!query) return true;
+  return (
+    paper.paperCode.toLowerCase().includes(query) ||
+    (paper.subjectName ?? "").toLowerCase().includes(query)
+  );
+}
+
+function matchesNeedsAttention(paper: NeedsAttentionPaper, query: string) {
   if (!query) return true;
   return (
     paper.paperCode.toLowerCase().includes(query) ||
@@ -71,8 +82,8 @@ export default function GroupedRules({
   // Keys the user has flipped away from the default. Programmes default closed, because four of
   // them open at once is the wall of rows this grouping exists to break up.
   const [toggled, setToggled] = useState<Set<string>>(new Set());
-  // Which school the tree below is showing. The backend already hands an institute admin nothing
-  // but their own schools, so this narrows what is on screen — it is not a permission boundary.
+  // Which school's tab is active. The backend already hands an institute admin nothing but
+  // their own schools, so this narrows what is on screen — it is not a permission boundary.
   const [selectedSchool, setSelectedSchool] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [newCode, setNewCode] = useState("");
@@ -81,27 +92,33 @@ export default function GroupedRules({
 
   const query = search.trim().toLowerCase();
 
+  // The "school not identified" bucket never reaches this page: with a school-first picker
+  // there is no tab for it to live under, and a paper with no institute yet is exactly the kind
+  // of not-done-yet mapping this page is meant to stop surfacing.
+  const knownSchools = useMemo(() => data.schools.filter((s) => !s.unknown), [data.schools]);
+
   // Filtering happens over the whole tree so a search reaches papers inside collapsed
   // sections; sections that keep nothing drop out entirely rather than showing as empty.
   const schools = useMemo(() => {
-    if (!query) return data.schools;
-    return data.schools
+    if (!query) return knownSchools;
+    return knownSchools
       .map((school) => {
         const programs = school.programs
           .map((program) => {
             const semesters = program.semesters
-              .map((s) => ({ ...s, papers: s.papers.filter((p) => matches(p, query)) }))
+              .map((s) => ({ ...s, papers: s.papers.filter((p) => matchesPaper(p, query)) }))
               .filter((s) => s.papers.length > 0)
               .map((s) => ({ ...s, paperCount: s.papers.length }));
             const paperCount = semesters.reduce((n, s) => n + s.paperCount, 0);
             return { ...program, semesters, paperCount };
           })
           .filter((p) => p.paperCount > 0);
+        const needsAttention = school.needsAttention.filter((p) => matchesNeedsAttention(p, query));
         const paperCount = programs.reduce((n, p) => n + p.paperCount, 0);
-        return { ...school, programs, paperCount };
+        return { ...school, programs, needsAttention, paperCount };
       })
-      .filter((s) => s.paperCount > 0);
-  }, [data.schools, query]);
+      .filter((s) => s.paperCount > 0 || s.needsAttention.length > 0);
+  }, [knownSchools, query]);
 
   const shown = schools.reduce((n, s) => n + s.paperCount, 0);
 
@@ -138,34 +155,54 @@ export default function GroupedRules({
 
   return (
     <>
-      {/* School first, then everything below is that school's own tree. Credits are university-wide
-          configuration, but a paper only means anything inside the programme that lists it, so the
-          school is the level worth choosing rather than scrolling past. */}
-      <div className="px-6 py-3.5 border-b border-border flex items-center gap-3 flex-wrap bg-background">
-        <Building2 className="w-4 h-4 text-primary shrink-0" />
-        <label htmlFor="credits-school" className="text-[11px] font-bold text-muted uppercase tracking-wide">
-          School
-        </label>
-        <select
-          id="credits-school"
-          value={school ? schoolKey(school) : ""}
-          onChange={(e) => setSelectedSchool(e.target.value)}
-          disabled={schools.length === 0}
-          className="px-3 py-2 border border-border rounded-lg text-[13.5px] font-bold text-foreground bg-surface focus:outline-none focus:border-primary max-w-full disabled:opacity-50"
-        >
-          {schools.length === 0 && <option value="">No schools to show</option>}
-          {schools.map((s) => (
-            <option key={schoolKey(s)} value={schoolKey(s)}>
-              {schoolLabel(s)} ({s.paperCount})
-            </option>
-          ))}
-        </select>
+      {/* A horizontal strip of every registered school, short name only — the full name and
+          everything below belongs to whichever one is tapped, not to the strip itself. */}
+      <div className="border-b border-border bg-background">
+        <div className="px-6 pt-3.5 flex items-center gap-2 overflow-x-auto pb-3">
+          <Building2 className="w-4 h-4 text-primary shrink-0" />
+          {knownSchools.length === 0 ? (
+            <span className="text-[13px] text-muted">No schools to show</span>
+          ) : (
+            knownSchools.map((s) => {
+              const active = school ? schoolKey(s) === schoolKey(school) : false;
+              return (
+                <button
+                  key={schoolKey(s)}
+                  onClick={() => setSelectedSchool(schoolKey(s))}
+                  className={`shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-bold whitespace-nowrap transition-colors border ${
+                    active
+                      ? "bg-primary text-white border-primary"
+                      : "bg-surface text-foreground border-border hover:border-primary"
+                  }`}
+                >
+                  {schoolChipLabel(s)}
+                  {s.needsAttention.length > 0 && (
+                    <span className={`ml-1.5 ${active ? "text-white/80" : "text-danger"}`}>
+                      · {s.needsAttention.length}
+                    </span>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
         {school && (
-          <span className="text-[12px] text-muted">
-            {school.paperCount} paper{school.paperCount === 1 ? "" : "s"}
-            {" · "}
-            {school.programs.length} section{school.programs.length === 1 ? "" : "s"}
-          </span>
+          <div className="px-6 pb-3.5">
+            <div className="text-[15px] font-bold text-foreground">{school.instituteName}</div>
+            <div className="text-[12px] text-muted mt-0.5">
+              {school.paperCount} paper{school.paperCount === 1 ? "" : "s"}
+              {" · "}
+              {school.programs.length} section{school.programs.length === 1 ? "" : "s"}
+              {school.needsAttention.length > 0 && (
+                <>
+                  {" · "}
+                  <span className="text-danger font-semibold">
+                    {school.needsAttention.length} need{school.needsAttention.length === 1 ? "s" : ""} attention
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
@@ -243,9 +280,124 @@ export default function GroupedRules({
           message={query ? "No paper code or subject matches that search." : "No credit rules yet."}
         />
       ) : (
-        <SchoolSection school={school} isOpen={isOpen} onToggle={toggle} onChanged={onChanged} />
+        <>
+          {school.needsAttention.length > 0 && (
+            <NeedsAttentionSection papers={school.needsAttention} readOnly={readOnly} onChanged={onChanged} />
+          )}
+          <SchoolSection school={school} isOpen={isOpen} onToggle={toggle} onChanged={onChanged} />
+        </>
       )}
     </>
+  );
+}
+
+/** Papers this school's students hold that resolve to no exact rule yet — a regex guess or a
+ *  silent zero. Kept as its own quick-action list rather than folded into the branch tree below,
+ *  since these papers usually have no settled programme/semester home yet either. */
+function NeedsAttentionSection({
+  papers,
+  readOnly,
+  onChanged,
+}: {
+  papers: NeedsAttentionPaper[];
+  readOnly: boolean;
+  onChanged: () => void;
+}) {
+  return (
+    <div className="mx-6 mt-4 mb-2 border border-danger/30 rounded-xl overflow-hidden">
+      <div className="px-4 py-2.5 bg-danger-faint flex items-center gap-2">
+        <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0" />
+        <span className="text-[13px] font-bold text-danger">Needs attention</span>
+        <span className="text-[12px] text-danger/80">
+          — a paper counting for zero is silently left out of its semester&apos;s SGPA
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[13.5px]">
+          <thead>
+            <tr className="bg-primary-faint">
+              <th className={TH}>Paper Code</th>
+              <th className={TH}>Subject</th>
+              <th className={TH}>Current</th>
+              <th className={TH}>Students</th>
+              {!readOnly && <th className={TH}>Set Credits</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {papers.map((p) => (
+              <NeedsAttentionRow key={p.paperCode} paper={p} readOnly={readOnly} onSaved={onChanged} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function NeedsAttentionRow({
+  paper,
+  readOnly,
+  onSaved,
+}: {
+  paper: NeedsAttentionPaper;
+  readOnly: boolean;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [credits, setCredits] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await saveCreditRule(paper.paperCode, Number(credits));
+      toast(`${paper.paperCode} set to ${credits} credits`, "success");
+      onSaved();
+    } catch (err) {
+      toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const zero = paper.creditSource === "NONE";
+
+  return (
+    <tr className="border-b border-border last:border-b-0 hover:bg-background transition-colors">
+      <td className="px-4 py-3 font-mono text-[13px]">{paper.paperCode}</td>
+      <td className="px-4 py-3 text-[12px] text-muted">{paper.subjectName || "—"}</td>
+      <td className="px-4 py-3">
+        {zero ? (
+          <Pill color="text-danger" colorFaint="bg-danger-faint">0 — not counted</Pill>
+        ) : (
+          <Pill color="text-orange" colorFaint="bg-orange-faint">{paper.currentCredits} — guessed</Pill>
+        )}
+      </td>
+      <td className="px-4 py-3 tabular-nums">{paper.studentCount}</td>
+      {!readOnly && (
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              value={credits}
+              onChange={(e) => setCredits(e.target.value)}
+              placeholder="—"
+              className={`${INPUT} w-20`}
+            />
+            {credits.trim() !== "" && (
+              <button
+                onClick={save}
+                disabled={saving}
+                className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            )}
+          </div>
+        </td>
+      )}
+    </tr>
   );
 }
 
@@ -267,15 +419,14 @@ function SchoolSection({
   // more than that goes back to closed, so it still reads as a table of contents.
   const programsDefaultOpen = school.programs.length <= 3;
 
+  if (school.programs.length === 0) {
+    return school.needsAttention.length === 0 ? (
+      <EmptyState icon={Calculator} message="No papers placed under a programme for this school yet." />
+    ) : null;
+  }
+
   return (
     <div className="py-2">
-      {school.unknown && (
-        <p className="px-6 py-3 text-[12px] text-muted max-w-3xl">
-          Neither the published scheme nor any imported result places these papers under a
-          programme. They still count towards SGPA exactly as they always did — they are just
-          waiting on a student importing them, or on the scheme being added to the catalog.
-        </p>
-      )}
       {school.programs.map((program) => (
         <ProgramSection
           key={`${key}:${program.kind}:${program.programCode ?? ""}`}

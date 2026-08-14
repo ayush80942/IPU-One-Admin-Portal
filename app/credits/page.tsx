@@ -7,26 +7,20 @@ import { useIsSuperAdmin } from "../components/AuthGate";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
 import EmptyState from "../components/EmptyState";
-import Pill from "../components/Pill";
 import GroupedRules from "./GroupedRules";
 import {
-  saveCreditRule,
   fetchCreditPatterns,
   saveCreditPattern,
   deleteCreditPattern,
-  fetchUnmappedPapers,
   fetchGroupedCreditRules,
   previewCreditPublish,
   publishCredits,
   CreditPattern,
-  UnmappedPaper,
   PublishPreview,
   GroupedCredits,
 } from "../lib/api";
 
 const TH = "px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide";
-const INPUT =
-  "px-2.5 py-1.5 border border-border rounded-lg text-[13px] bg-surface focus:outline-none focus:border-primary";
 
 type Tab = "rules" | "patterns";
 
@@ -38,7 +32,6 @@ export default function CreditsPage() {
   const canEdit = useIsSuperAdmin();
   const [grouped, setGrouped] = useState<GroupedCredits | null>(null);
   const [patterns, setPatterns] = useState<CreditPattern[]>([]);
-  const [unmapped, setUnmapped] = useState<UnmappedPaper[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("rules");
   const [preview, setPreview] = useState<PublishPreview | null>(null);
@@ -47,14 +40,12 @@ export default function CreditsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [g, p, u] = await Promise.all([
+      const [g, p] = await Promise.all([
         fetchGroupedCreditRules(),
         canEdit ? fetchCreditPatterns() : Promise.resolve([]),
-        canEdit ? fetchUnmappedPapers() : Promise.resolve([]),
       ]);
       setGrouped(g);
       setPatterns(p);
-      setUnmapped(u);
     } catch (err) {
       toast(`Failed to load credits: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
@@ -64,10 +55,19 @@ export default function CreditsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const zeroCreditPapers = unmapped.filter((u) => u.creditSource === "NONE").length;
-  const unplacedPapers = grouped
-    ? grouped.totalPapers - grouped.placedPapers
-    : 0;
+  // Needs-attention papers are scoped per school on the backend, so a code held across two
+  // institutes is counted once per school there — dedup by paper code for a university-wide
+  // headline number instead of double-counting it here.
+  const needsAttention = new Map<string, "PATTERN" | "NONE">();
+  for (const school of grouped?.schools ?? []) {
+    for (const paper of school.needsAttention) {
+      if (paper.creditSource === "NONE" || !needsAttention.has(paper.paperCode)) {
+        needsAttention.set(paper.paperCode, paper.creditSource);
+      }
+    }
+  }
+  const zeroCreditPapers = [...needsAttention.values()].filter((s) => s === "NONE").length;
+  const guessedCreditPapers = needsAttention.size - zeroCreditPapers;
 
   const openPreview = async () => {
     setPreviewing(true);
@@ -112,13 +112,7 @@ export default function CreditsPage() {
           value={loading || !grouped ? "—" : grouped.totalPapers}
           label="Paper Codes Mapped"
           icon={Calculator}
-          subLabel={
-            loading || !grouped
-              ? undefined
-              : unplacedPapers > 0
-                ? `${unplacedPapers} not placed under a programme`
-                : "All placed by school & programme"
-          }
+          subLabel="With an exact credit rule"
         />
         {canEdit && (
           <>
@@ -128,10 +122,10 @@ export default function CreditsPage() {
               label="Counting For Zero"
               color={zeroCreditPapers > 0 ? "danger" : "success"}
               icon={AlertTriangle}
-              subLabel={zeroCreditPapers > 0 ? "Excluded from SGPA" : "Nothing unmapped"}
+              subLabel={zeroCreditPapers > 0 ? "Excluded from SGPA — see each school" : "Nothing unmapped"}
             />
             <StatTile
-              value={loading ? "—" : unmapped.length - zeroCreditPapers}
+              value={loading ? "—" : guessedCreditPapers}
               label="Credits Guessed"
               color="orange"
               subLabel="Matched a pattern, not an exact rule"
@@ -139,41 +133,6 @@ export default function CreditsPage() {
           </>
         )}
       </div>
-
-      {/* Needs attention — only when there is something to act on. */}
-      {!loading && unmapped.length > 0 && (
-        <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden mb-6">
-          <div className="px-6 py-4 border-b border-border">
-            <h2 className="text-[15px] font-bold text-primary">Needs Attention</h2>
-            <p className="text-[12px] text-muted mt-0.5">
-              Papers found in imported results with no exact rule. A paper counting for zero is silently
-              left out of its semester&apos;s SGPA.
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13.5px]">
-              <thead>
-                <tr className="bg-primary-faint">
-                  <th className={TH}>Paper Code</th>
-                  <th className={TH}>Subject</th>
-                  <th className={TH}>Current</th>
-                  <th className={TH}>Students</th>
-                  <th className={TH}>Set Credits</th>
-                </tr>
-              </thead>
-              <tbody>
-                {unmapped.map((u) => (
-                  <UnmappedRow
-                    key={u.paperCode}
-                    paper={u}
-                    onSaved={() => load()}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* Publish */}
       {canEdit && (
@@ -242,63 +201,6 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
     >
       {children}
     </button>
-  );
-}
-
-function UnmappedRow({ paper, onSaved }: { paper: UnmappedPaper; onSaved: () => void }) {
-  const { toast } = useToast();
-  const [credits, setCredits] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await saveCreditRule(paper.paperCode, Number(credits));
-      toast(`${paper.paperCode} set to ${credits} credits`, "success");
-      onSaved();
-    } catch (err) {
-      toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const zero = paper.creditSource === "NONE";
-
-  return (
-    <tr className="border-b border-border last:border-b-0">
-      <td className="px-4 py-3 font-mono text-[13px]">{paper.paperCode}</td>
-      <td className="px-4 py-3 text-[12px] text-muted">{paper.subjectName || "—"}</td>
-      <td className="px-4 py-3">
-        {zero ? (
-          <Pill color="text-danger" colorFaint="bg-danger-faint">0 — not counted</Pill>
-        ) : (
-          <Pill color="text-orange" colorFaint="bg-orange-faint">{paper.currentCredits} — guessed</Pill>
-        )}
-      </td>
-      <td className="px-4 py-3 tabular-nums">{paper.studentCount}</td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            value={credits}
-            onChange={(e) => setCredits(e.target.value)}
-            placeholder="—"
-            className={`${INPUT} w-20`}
-          />
-          {credits.trim() !== "" && (
-            <button
-              onClick={save}
-              disabled={saving}
-              className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-          )}
-        </div>
-      </td>
-    </tr>
   );
 }
 

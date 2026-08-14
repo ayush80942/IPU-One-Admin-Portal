@@ -531,15 +531,6 @@ export interface CreditPattern {
   active: boolean;
 }
 
-/** A paper seen in real results that no exact rule covers. NONE = counts for zero credits. */
-export interface UnmappedPaper {
-  paperCode: string;
-  subjectName: string | null;
-  creditSource: "PATTERN" | "NONE";
-  currentCredits: number;
-  studentCount: number;
-}
-
 export interface PublishPreview {
   subjectsChanged: number;
   semestersChanged: number;
@@ -580,6 +571,17 @@ export interface GroupedProgram {
   semesters: GroupedSemester[];
 }
 
+/** A paper this school's students hold that resolves to no exact rule — a regex guessed the
+ *  credits (PATTERN) or nothing matched and it silently counts for zero (NONE). A code held by
+ *  students of more than one institute appears in each of those institutes' lists. */
+export interface NeedsAttentionPaper {
+  paperCode: string;
+  subjectName: string | null;
+  creditSource: "PATTERN" | "NONE";
+  currentCredits: number;
+  studentCount: number;
+}
+
 export interface GroupedSchool {
   instituteCode: string | null;
   instituteName: string;
@@ -587,6 +589,7 @@ export interface GroupedSchool {
   unknown: boolean;
   paperCount: number;
   programs: GroupedProgram[];
+  needsAttention: NeedsAttentionPaper[];
 }
 
 export interface GroupedCredits {
@@ -658,12 +661,6 @@ export async function saveCreditPattern(
 export async function deleteCreditPattern(id: string): Promise<void> {
   const res = await apiFetch(`${API_BASE}/api/admin/credits/patterns/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete pattern: ${res.status}`));
-}
-
-export async function fetchUnmappedPapers(): Promise<UnmappedPaper[]> {
-  const res = await apiFetch(`${API_BASE}/api/admin/credits/unmapped`);
-  if (!res.ok) throw new Error(`Failed to fetch unmapped papers: ${res.status}`);
-  return res.json();
 }
 
 /** Dry run — writes nothing. */
