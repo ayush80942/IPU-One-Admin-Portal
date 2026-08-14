@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useState, useEffect, useCallback, useMemo } from "react";
-import { GraduationCap, Landmark, Plus, X } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { ChevronDown, ChevronRight, GraduationCap, Landmark, Plus, X } from "lucide-react";
 import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
@@ -22,25 +22,16 @@ const TH = "px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tra
 const INPUT =
   "px-2.5 py-1.5 border border-border rounded-lg text-[13px] bg-surface focus:outline-none focus:border-primary";
 
-/**
- * Institutes and courses are the same job — the university's academic structure — and a course
- * cannot be created without picking its institute, so the two are one page with a view switch
- * rather than two entries in the sidebar.
- */
-type View = "institutes" | "courses";
-
 export default function AcademicStructurePage() {
   const { toast } = useToast();
-  const [view, setView] = useState<View>("institutes");
   const [institutes, setInstitutes] = useState<Institute[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [selectedInstitute, setSelectedInstitute] = useState<Institute | null>(null);
+  const [addingInstitute, setAddingInstitute] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [addingCourseFor, setAddingCourseFor] = useState<string | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
 
-  // Both lists load together: the Courses view needs the institute roster for its picker and for
-  // naming the institute of a course whose own institute row has not resolved yet.
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -56,13 +47,43 @@ export default function AcademicStructurePage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Courses whose institute code doesn't match any known institute are kept out of the per-
+  // institute accordions and surfaced separately, since there's nowhere sensible to nest them.
+  const coursesByInstitute = useMemo(() => {
+    const map = new Map<string, Course[]>();
+    for (const course of courses) {
+      const key = course.instituteCode ?? "__none";
+      const list = map.get(key);
+      if (list) list.push(course);
+      else map.set(key, [course]);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.programCode.localeCompare(b.programCode));
+    return map;
+  }, [courses]);
+
+  const knownInstituteCodes = useMemo(() => new Set(institutes.map((i) => i.instituteCode)), [institutes]);
+  const orphanCourses = useMemo(
+    () => courses.filter((c) => !c.instituteCode || !knownInstituteCodes.has(c.instituteCode)),
+    [courses, knownInstituteCodes]
+  );
+
+  const sortedInstitutes = useMemo(
+    () => [...institutes].sort((a, b) => a.instituteName.localeCompare(b.instituteName)),
+    [institutes]
+  );
+
+  const toggleExpanded = (code: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+    setAddingCourseFor(null);
+  };
+
   const coursesMissingDuration = courses.filter((c) => c.totalSemesters == null).length;
   const institutesMissingShortName = institutes.filter((i) => !i.shortName).length;
-
-  const switchView = (next: View) => {
-    setView(next);
-    setAdding(false);
-  };
 
   return (
     <div>
@@ -72,58 +93,42 @@ export default function AcademicStructurePage() {
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        {view === "institutes" ? (
-          <StatTile
-            value={loading ? "—" : institutes.length}
-            label="Total Institutes"
-            icon={Landmark}
-            subLabel={
-              !loading && institutesMissingShortName > 0
-                ? `${institutesMissingShortName} without a short name`
-                : undefined
-            }
-          />
-        ) : (
-          <StatTile
-            value={loading ? "—" : courses.length}
-            label="Total Courses"
-            icon={GraduationCap}
-            color="teal"
-            subLabel={
-              !loading && coursesMissingDuration > 0
-                ? `${coursesMissingDuration} missing duration`
-                : undefined
-            }
-          />
-        )}
+        <StatTile
+          value={loading ? "—" : institutes.length}
+          label="Total Institutes"
+          icon={Landmark}
+          subLabel={
+            !loading && institutesMissingShortName > 0
+              ? `${institutesMissingShortName} without a short name`
+              : undefined
+          }
+        />
+        <StatTile
+          value={loading ? "—" : courses.length}
+          label="Total Courses"
+          icon={GraduationCap}
+          color="teal"
+          subLabel={
+            !loading && coursesMissingDuration > 0 ? `${coursesMissingDuration} missing duration` : undefined
+          }
+        />
       </div>
 
       <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <label htmlFor="structure-view" className="sr-only">
-              Show
-            </label>
-            <select
-              id="structure-view"
-              value={view}
-              onChange={(e) => switchView(e.target.value as View)}
-              className="px-3 py-2 border border-border rounded-lg text-[14px] font-bold text-primary bg-surface focus:outline-none focus:border-primary"
-            >
-              <option value="institutes">Institutes</option>
-              <option value="courses">Courses</option>
-            </select>
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-[14px] font-bold text-primary">Institutes</h2>
             <span className="text-[12px] text-muted tabular-nums">
-              {loading ? "—" : view === "institutes" ? institutes.length : courses.length}
+              {loading ? "—" : institutes.length}
             </span>
           </div>
           <div className="flex items-center gap-4">
             <button
-              onClick={() => setAdding((v) => !v)}
+              onClick={() => setAddingInstitute((v) => !v)}
               className="inline-flex items-center gap-1.5 text-[13px] font-bold text-primary hover:underline"
             >
-              {adding ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-              {adding ? "Cancel" : view === "institutes" ? "Add institute" : "Add course"}
+              {addingInstitute ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              {addingInstitute ? "Cancel" : "Add institute"}
             </button>
             <button onClick={load} className="text-[13px] font-medium text-primary hover:underline">
               Refresh
@@ -131,25 +136,15 @@ export default function AcademicStructurePage() {
           </div>
         </div>
 
-        {adding &&
-          (view === "institutes" ? (
-            <AddInstituteForm
-              onCancel={() => setAdding(false)}
-              onCreated={(created) => {
-                setInstitutes((prev) => [...prev, created]);
-                setAdding(false);
-              }}
-            />
-          ) : (
-            <AddCourseForm
-              institutes={institutes}
-              onCancel={() => setAdding(false)}
-              onCreated={(created) => {
-                setCourses((prev) => [...prev, created]);
-                setAdding(false);
-              }}
-            />
-          ))}
+        {addingInstitute && (
+          <AddInstituteForm
+            onCancel={() => setAddingInstitute(false)}
+            onCreated={(created) => {
+              setInstitutes((prev) => [...prev, created]);
+              setAddingInstitute(false);
+            }}
+          />
+        )}
 
         {loading ? (
           <div className="p-6 space-y-3">
@@ -157,44 +152,63 @@ export default function AcademicStructurePage() {
               <div key={i} className="skeleton h-12 rounded-lg" />
             ))}
           </div>
-        ) : view === "institutes" ? (
-          <InstitutesTable
-            institutes={institutes}
-            onExpand={setSelectedInstitute}
-            onSaved={(updated) =>
-              setInstitutes((prev) =>
-                prev.map((i) => (i.instituteCode === updated.instituteCode ? updated : i))
-              )
-            }
+        ) : institutes.length === 0 ? (
+          <EmptyState
+            icon={Landmark}
+            message="No institutes yet — they're created automatically as students import results, or add one above."
           />
         ) : (
-          <CoursesTable
-            courses={courses}
-            onExpand={setSelectedCourse}
-            onSaved={(updated) =>
-              setCourses((prev) => prev.map((c) => (c.programCode === updated.programCode ? updated : c)))
-            }
-          />
+          <div>
+            {sortedInstitutes.map((institute) => (
+              <InstituteAccordionRow
+                key={institute.instituteCode}
+                institute={institute}
+                courses={coursesByInstitute.get(institute.instituteCode) ?? []}
+                isExpanded={expanded.has(institute.instituteCode)}
+                onToggle={() => toggleExpanded(institute.instituteCode)}
+                onSavedInstitute={(updated) =>
+                  setInstitutes((prev) =>
+                    prev.map((i) => (i.instituteCode === updated.instituteCode ? updated : i))
+                  )
+                }
+                onExpandCourse={setSelectedCourse}
+                onSavedCourse={(updated) =>
+                  setCourses((prev) => prev.map((c) => (c.programCode === updated.programCode ? updated : c)))
+                }
+                isAddingCourse={addingCourseFor === institute.instituteCode}
+                onToggleAddCourse={() =>
+                  setAddingCourseFor((prev) => (prev === institute.instituteCode ? null : institute.instituteCode))
+                }
+                onCourseCreated={(created) => {
+                  setCourses((prev) => [...prev, created]);
+                  setAddingCourseFor(null);
+                }}
+              />
+            ))}
+
+            {orphanCourses.length > 0 && (
+              <div>
+                <div className="px-6 py-3 border-t border-b border-border bg-background">
+                  <div className="text-[13px] font-bold text-foreground">Courses without a matched institute</div>
+                  <div className="text-[12px] text-muted">
+                    Their institute code doesn&apos;t match any institute above — likely a typo, or an institute
+                    record that hasn&apos;t been added yet.
+                  </div>
+                </div>
+                <div className="px-6 py-4">
+                  <CoursesMiniTable
+                    courses={orphanCourses}
+                    onExpand={setSelectedCourse}
+                    onSaved={(updated) =>
+                      setCourses((prev) => prev.map((c) => (c.programCode === updated.programCode ? updated : c)))
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
-
-      {selectedInstitute && (
-        <DetailDialog
-          title={selectedInstitute.instituteName}
-          subtitle={`Code: ${selectedInstitute.instituteCode}`}
-          onClose={() => setSelectedInstitute(null)}
-        >
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <DetailField label="Short Name" value={selectedInstitute.shortName} />
-            <DetailField
-              label="Courses"
-              value={courses.filter((c) => c.instituteCode === selectedInstitute.instituteCode).length}
-            />
-            <DetailField label="Created" value={new Date(selectedInstitute.createdAt).toLocaleString()} />
-            <DetailField label="Last Updated" value={new Date(selectedInstitute.updatedAt).toLocaleString()} />
-          </div>
-        </DetailDialog>
-      )}
 
       {selectedCourse && (
         <DetailDialog
@@ -297,58 +311,28 @@ function AddInstituteForm({
   );
 }
 
-function InstitutesTable({
-  institutes,
-  onExpand,
-  onSaved,
-}: {
-  institutes: Institute[];
-  onExpand: (institute: Institute) => void;
-  onSaved: (updated: Institute) => void;
-}) {
-  if (institutes.length === 0) {
-    return (
-      <EmptyState
-        icon={Landmark}
-        message="No institutes yet — they're created automatically as students import results, or add one above."
-      />
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-[13.5px]">
-        <thead>
-          <tr className="bg-primary-faint">
-            <th className={TH}>Code</th>
-            <th className={TH}>Institute</th>
-            <th className={TH}>Short Name</th>
-            <th className={TH}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {institutes.map((institute) => (
-            <InstituteRow
-              key={institute.instituteCode}
-              institute={institute}
-              onExpand={onExpand}
-              onSaved={onSaved}
-            />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function InstituteRow({
+function InstituteAccordionRow({
   institute,
-  onExpand,
-  onSaved,
+  courses,
+  isExpanded,
+  onToggle,
+  onSavedInstitute,
+  onExpandCourse,
+  onSavedCourse,
+  isAddingCourse,
+  onToggleAddCourse,
+  onCourseCreated,
 }: {
   institute: Institute;
-  onExpand: (institute: Institute) => void;
-  onSaved: (updated: Institute) => void;
+  courses: Course[];
+  isExpanded: boolean;
+  onToggle: () => void;
+  onSavedInstitute: (updated: Institute) => void;
+  onExpandCourse: (course: Course) => void;
+  onSavedCourse: (updated: Course) => void;
+  isAddingCourse: boolean;
+  onToggleAddCourse: () => void;
+  onCourseCreated: (created: Course) => void;
 }) {
   const { toast } = useToast();
   const [shortName, setShortName] = useState(institute.shortName ?? "");
@@ -362,7 +346,7 @@ function InstituteRow({
       const updated = await updateInstitute(institute.instituteCode, {
         shortName: shortName.trim() === "" ? null : shortName.trim(),
       });
-      onSaved(updated);
+      onSavedInstitute(updated);
       toast("Institute updated", "success");
     } catch (err) {
       toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
@@ -372,34 +356,72 @@ function InstituteRow({
   };
 
   return (
-    <tr className="hover:bg-background transition-colors border-b border-border last:border-b-0">
-      <td className="px-4 py-3 font-mono text-[13px]">{institute.instituteCode}</td>
-      <td className="px-4 py-3 cursor-pointer group" onClick={() => onExpand(institute)}>
-        <div className="font-semibold group-hover:text-primary group-hover:underline">
-          {institute.instituteName}
-        </div>
-      </td>
-      <td className="px-4 py-3">
+    <div className="border-b border-border last:border-b-0">
+      <div className="flex items-center gap-3 px-6 py-3 hover:bg-background transition-colors">
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-2.5 flex-1 min-w-0 text-left"
+          aria-expanded={isExpanded}
+        >
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4 text-muted shrink-0" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-muted shrink-0" />
+          )}
+          <span className="font-mono text-[13px] text-muted shrink-0">{institute.instituteCode}</span>
+          <span className="font-semibold text-[13.5px] truncate">{institute.instituteName}</span>
+          <span className="text-[12px] text-muted tabular-nums shrink-0">
+            {courses.length} course{courses.length === 1 ? "" : "s"}
+          </span>
+        </button>
         <input
           type="text"
           value={shortName}
           onChange={(e) => setShortName(e.target.value)}
-          placeholder="e.g. USAR"
-          className={`${INPUT} w-full`}
+          onClick={(e) => e.stopPropagation()}
+          placeholder="Short name"
+          className={`${INPUT} w-32 shrink-0`}
         />
-      </td>
-      <td className="px-4 py-3">
         {dirty && (
           <button
             onClick={save}
             disabled={saving}
-            className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
+            className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50 shrink-0"
           >
             {saving ? "Saving…" : "Save"}
           </button>
         )}
-      </td>
-    </tr>
+      </div>
+
+      {isExpanded && (
+        <div className="bg-background border-t border-border">
+          <div className="px-6 py-3 flex items-center justify-between">
+            <span className="text-[12px] font-bold text-muted uppercase tracking-wide">Courses</span>
+            <button
+              onClick={onToggleAddCourse}
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-primary hover:underline"
+            >
+              {isAddingCourse ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+              {isAddingCourse ? "Cancel" : "Add course"}
+            </button>
+          </div>
+
+          {isAddingCourse && (
+            <AddCourseForm institute={institute} onCancel={onToggleAddCourse} onCreated={onCourseCreated} />
+          )}
+
+          {courses.length === 0 ? (
+            <div className="px-6 pb-4 text-[13px] text-muted">
+              No courses yet for this institute — add the first one above.
+            </div>
+          ) : (
+            <div className="px-6 pb-4">
+              <CoursesMiniTable courses={courses} onExpand={onExpandCourse} onSaved={onSavedCourse} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -408,18 +430,17 @@ function InstituteRow({
 // ---------------------------------------------------------------------------
 
 function AddCourseForm({
-  institutes,
+  institute,
   onCancel,
   onCreated,
 }: {
-  institutes: Institute[];
+  institute: Institute;
   onCancel: () => void;
   onCreated: (course: Course) => void;
 }) {
   const { toast } = useToast();
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [instituteCode, setInstituteCode] = useState("");
   const [shortName, setShortName] = useState("");
   const [totalSemesters, setTotalSemesters] = useState("");
   const [saving, setSaving] = useState(false);
@@ -430,7 +451,7 @@ function AddCourseForm({
       const created = await createCourse({
         programCode: code.trim(),
         programName: name.trim(),
-        instituteCode,
+        instituteCode: institute.instituteCode,
         shortName: shortName.trim() || null,
         totalSemesters: totalSemesters.trim() === "" ? null : Number(totalSemesters),
       });
@@ -444,7 +465,7 @@ function AddCourseForm({
   };
 
   return (
-    <div className="px-6 py-4 border-b border-border bg-background">
+    <div className="px-6 py-4 border-y border-border bg-surface">
       <div className="flex items-end gap-3 flex-wrap">
         <Field label="Program code" hint="e.g. 031">
           <input
@@ -464,19 +485,10 @@ function AddCourseForm({
             className={`${INPUT} w-[26rem] max-w-full`}
           />
         </Field>
-        <Field label="Institute" hint="Must already exist">
-          <select
-            value={instituteCode}
-            onChange={(e) => setInstituteCode(e.target.value)}
-            className={`${INPUT} w-56`}
-          >
-            <option value="">Select institute…</option>
-            {institutes.map((i) => (
-              <option key={i.instituteCode} value={i.instituteCode}>
-                {i.shortName ? `${i.shortName} — ${i.instituteCode}` : `${i.instituteCode} — ${i.instituteName}`}
-              </option>
-            ))}
-          </select>
+        <Field label="Institute" hint={institute.instituteCode}>
+          <div className={`${INPUT} w-56 bg-background text-muted`}>
+            {institute.shortName ? `${institute.shortName} — ${institute.instituteName}` : institute.instituteName}
+          </div>
         </Field>
         <Field label="Short name" hint="Optional">
           <input
@@ -500,7 +512,7 @@ function AddCourseForm({
         <div className="flex items-center gap-3 pb-1.5">
           <button
             onClick={submit}
-            disabled={saving || !code.trim() || !name.trim() || !instituteCode}
+            disabled={saving || !code.trim() || !name.trim()}
             className="px-3.5 py-1.5 rounded-lg bg-primary text-white text-[13px] font-bold hover:bg-primary-light transition-colors disabled:opacity-40"
           >
             {saving ? "Adding…" : "Add course"}
@@ -510,16 +522,11 @@ function AddCourseForm({
           </button>
         </div>
       </div>
-      {institutes.length === 0 && (
-        <p className="text-[12px] text-muted mt-3">
-          There are no institutes yet — add one first, since a course has to belong to a school.
-        </p>
-      )}
     </div>
   );
 }
 
-function CoursesTable({
+function CoursesMiniTable({
   courses,
   onExpand,
   onSaved,
@@ -528,42 +535,8 @@ function CoursesTable({
   onExpand: (course: Course) => void;
   onSaved: (updated: Course) => void;
 }) {
-  // Grouped by school, so a university admin reading down the list sees the structure rather
-  // than 30-odd programmes in whatever order the table returned them.
-  const grouped = useMemo(() => {
-    const byInstitute = new Map<string, { label: string; courses: Course[] }>();
-    for (const course of courses) {
-      const key = course.instituteCode ?? "__none";
-      const existing = byInstitute.get(key);
-      if (existing) {
-        existing.courses.push(course);
-        continue;
-      }
-      byInstitute.set(key, {
-        label: course.instituteName || course.instituteCode || "No institute yet",
-        courses: [course],
-      });
-    }
-    return [...byInstitute.entries()]
-      .map(([key, group]) => ({
-        key,
-        ...group,
-        courses: [...group.courses].sort((a, b) => a.programCode.localeCompare(b.programCode)),
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [courses]);
-
-  if (courses.length === 0) {
-    return (
-      <EmptyState
-        icon={GraduationCap}
-        message="No courses yet — they're created automatically as students import results, or add one above."
-      />
-    );
-  }
-
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full text-[13.5px]">
         <thead>
           <tr className="bg-primary-faint">
@@ -575,23 +548,8 @@ function CoursesTable({
           </tr>
         </thead>
         <tbody>
-          {grouped.map((group) => (
-            <Fragment key={group.key}>
-              <tr className="bg-background border-b border-border">
-                <td colSpan={5} className="px-4 py-2 text-[11px] font-bold text-muted uppercase tracking-wide">
-                  {group.label}
-                  <span className="ml-2 font-normal normal-case tabular-nums">{group.courses.length}</span>
-                </td>
-              </tr>
-              {group.courses.map((course) => (
-                <CourseRow
-                  key={course.programCode}
-                  course={course}
-                  onExpand={onExpand}
-                  onSaved={onSaved}
-                />
-              ))}
-            </Fragment>
+          {courses.map((course) => (
+            <CourseRow key={course.programCode} course={course} onExpand={onExpand} onSaved={onSaved} />
           ))}
         </tbody>
       </table>
@@ -634,7 +592,7 @@ function CourseRow({
   };
 
   return (
-    <tr className="hover:bg-background transition-colors border-b border-border last:border-b-0">
+    <tr className="hover:bg-background transition-colors border-b border-border last:border-b-0 bg-surface">
       <td className="px-4 py-3 font-mono text-[13px]">{course.programCode}</td>
       <td className="px-4 py-3 cursor-pointer group" onClick={() => onExpand(course)}>
         <div className="font-semibold group-hover:text-primary group-hover:underline">
