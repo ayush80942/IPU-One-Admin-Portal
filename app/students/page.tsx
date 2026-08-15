@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Search, Users, GraduationCap, CircleCheck, X, ChevronRight } from "lucide-react";
 import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
@@ -8,7 +9,6 @@ import StatTile from "../components/StatTile";
 import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
 import Filter, { SELECT_CLASS } from "../components/Filter";
-import DetailDialog, { DetailField } from "../components/DetailDialog";
 import { fetchStudents, StudentProfile } from "../lib/api";
 import { calculateYearAndSem } from "../lib/academicYear";
 
@@ -20,12 +20,6 @@ const STATUS_OPTIONS = [
   { value: "passed", label: "Passed Out" },
   { value: "unknown", label: "Unknown" },
 ];
-
-function statusPill(passedOut: boolean | null) {
-  if (passedOut === true) return <Pill color="text-success" colorFaint="bg-success-faint">Pass Out</Pill>;
-  if (passedOut === null) return <Pill color="text-muted" colorFaint="bg-background">Unknown</Pill>;
-  return null;
-}
 
 function yearSemPill(passedOut: boolean | null, batchYear: number | null) {
   if (passedOut === true) return <Pill color="text-success" colorFaint="bg-success-faint">Pass Out</Pill>;
@@ -82,9 +76,9 @@ function ActiveFilterChip({ label, onClear }: { label: string; onClear: () => vo
 
 export default function StudentsPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<StudentProfile | null>(null);
 
   const [search, setSearch] = useState("");
   const [instituteCode, setInstituteCode] = useState(ALL);
@@ -315,11 +309,11 @@ export default function StudentsPage() {
                 {filtered.map((s) => (
                   <tr
                     key={s.enrollmentNo}
-                    onClick={() => setSelected(s)}
+                    onClick={() => router.push(`/students/${encodeURIComponent(s.enrollmentNo)}`)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        setSelected(s);
+                        router.push(`/students/${encodeURIComponent(s.enrollmentNo)}`);
                       }
                     }}
                     tabIndex={0}
@@ -359,33 +353,6 @@ export default function StudentsPage() {
           </div>
         )}
       </div>
-
-      {selected && (
-        <DetailDialog onClose={() => setSelected(null)}>
-          <div className="flex flex-col items-center text-center mb-6">
-            <Avatar profileImage={selected.profileImage} name={selected.name} size={96} />
-            <div className="mt-3 text-[17px] font-bold text-foreground">{selected.name || "—"}</div>
-            <div className="text-[13px] font-mono text-muted mt-0.5">{selected.enrollmentNo}</div>
-            <div className="flex items-center gap-2 mt-3">
-              {selected.passedOut === null && statusPill(selected.passedOut)}
-              {yearSemPill(selected.passedOut, selected.batchYear)}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <DetailField label="Program" value={selected.courseShortName || selected.programName} />
-            <DetailField label="Program Code" value={selected.programCode} />
-            <DetailField label="Institute" value={selected.instituteShortName || selected.instituteName} />
-            <DetailField label="Institute Code" value={selected.instituteCode} />
-            <DetailField label="Batch Year" value={selected.batchYear} />
-            <DetailField label="Admission Year" value={selected.admissionYear} />
-            <DetailField label="Gender" value={selected.gender} />
-            <DetailField label="Contact Number" value={selected.contactNumber} />
-            <DetailField label="Email" value={selected.email} />
-            <DetailField label="Father's Name" value={selected.fatherName} />
-            <DetailField label="Mother's Name" value={selected.motherName} />
-          </div>
-        </DetailDialog>
-      )}
     </div>
   );
 }

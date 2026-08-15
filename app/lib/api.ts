@@ -309,6 +309,67 @@ export async function fetchStudents(): Promise<StudentProfile[]> {
   return res.json();
 }
 
+// ===== Result types (admin student-detail view only — the self-service app has its own) =====
+export interface SubjectResult {
+  paperCode: string;
+  subjectName: string | null;
+  internalMarks: number | null;
+  externalMarks: number | null;
+  totalMarks: number | null;
+  credits: number | null;
+  gradePoint: number | null;
+  grade: string | null;
+  status: string | null;
+  graceApplied: boolean | null;
+  /** True when this paper has no resolved credit rule — credits is null, not 0. */
+  creditsMissing: boolean | null;
+}
+
+export interface SemesterResult {
+  semester: number;
+  /** Null when a paper in this semester has no resolved credit mapping — render "—", not 0. */
+  sgpa: number | null;
+  credits: number;
+  backlogs: number;
+  totalMarks: number;
+  obtainedMarks: number;
+  percentage: number;
+  declaredDate: string | null;
+  creditsIncomplete: boolean | null;
+}
+
+export interface ResultDashboard {
+  overall: {
+    /** Null when any semester has a paper with no resolved credit mapping — render "—", not 0. */
+    cgpa: number | null;
+    percentage: number;
+    totalCredits: number;
+    backlogs: number;
+    totalMarks: number;
+    obtainedMarks: number;
+    creditMappingIncomplete: boolean | null;
+  } | null;
+  semesters: SemesterResult[];
+  subjects: Record<string, SubjectResult[]>;
+  trend: (number | null)[];
+  lastUpdated: string | null;
+  unmappedSubjects: string[] | null;
+}
+
+/** Everything the student detail page shows, in one round trip. */
+export interface StudentDetail {
+  profile: StudentProfile;
+  results: ResultDashboard;
+  documents: DocumentResponse[];
+  feeSubmissions: FeeSubmissionDetail[];
+}
+
+export async function fetchStudentDetail(enrollmentNo: string): Promise<StudentDetail> {
+  const res = await apiFetch(`${API_BASE}/api/admin/students/${encodeURIComponent(enrollmentNo)}`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch student: ${res.status}`));
+  return res.json();
+}
+
 // ===== Document types =====
 export interface DocumentResponse {
   id: number;
