@@ -7,6 +7,7 @@ import { useIsSuperAdmin } from "../components/AuthGate";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
 import GroupedRules from "./GroupedRules";
+import SchemeErasSection from "./SchemeEras";
 import {
   fetchGroupedCreditRules,
   previewCreditPublish,
@@ -124,6 +125,8 @@ export default function CreditsPage() {
         </button>
       </div>
       )}
+
+      {canEdit && <SchemeErasSection onChanged={load} />}
 
       <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">

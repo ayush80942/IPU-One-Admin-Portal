@@ -625,6 +625,86 @@ export async function deleteCreditRule(paperCode: string): Promise<void> {
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete credit rule: ${res.status}`));
 }
 
+/** A named scheme revision, identified by the admission years it covers. `endAdmissionYear`
+ *  null means still current — new admissions keep falling into it until a later era is added. */
+export interface SchemeEra {
+  id: string;
+  label: string;
+  startAdmissionYear: number;
+  endAdmissionYear: number | null;
+  /** null = applies university-wide. */
+  instituteCode: string | null;
+}
+
+export type SchemeEraUpsert = Omit<SchemeEra, "id">;
+
+/** Overrides a paper code's base credit_rules value for one programme and/or one scheme era —
+ *  what makes the same code able to mean two different subjects across a scheme revision.
+ *  `programCode`/`schemeEraId` null means "any programme"/"any era", but at least one must be
+ *  set: an override scoping neither is just a credit_rules edit. */
+export interface ScopedCreditRule {
+  id: string;
+  paperCode: string;
+  programCode: string | null;
+  schemeEraId: string | null;
+  credits: number;
+  subjectName: string | null;
+  updatedAt: string;
+}
+
+export type ScopedCreditRuleUpsert = Omit<ScopedCreditRule, "id" | "updatedAt">;
+
+export async function fetchSchemeEras(): Promise<SchemeEra[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/eras`);
+  if (!res.ok) throw new Error(`Failed to fetch scheme eras: ${res.status}`);
+  return res.json();
+}
+
+export async function saveSchemeEra(id: string | null, update: SchemeEraUpsert): Promise<SchemeEra> {
+  const res = await apiFetch(
+    id ? `${API_BASE}/api/admin/credits/eras/${id}` : `${API_BASE}/api/admin/credits/eras`,
+    {
+      method: id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
+    }
+  );
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to save scheme era: ${res.status}`));
+  return res.json();
+}
+
+export async function deleteSchemeEra(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/eras/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete scheme era: ${res.status}`));
+}
+
+export async function fetchCreditOverrides(): Promise<ScopedCreditRule[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/overrides`);
+  if (!res.ok) throw new Error(`Failed to fetch credit overrides: ${res.status}`);
+  return res.json();
+}
+
+export async function saveCreditOverride(
+  id: string | null,
+  update: ScopedCreditRuleUpsert
+): Promise<ScopedCreditRule> {
+  const res = await apiFetch(
+    id ? `${API_BASE}/api/admin/credits/overrides/${id}` : `${API_BASE}/api/admin/credits/overrides`,
+    {
+      method: id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
+    }
+  );
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to save credit override: ${res.status}`));
+  return res.json();
+}
+
+export async function deleteCreditOverride(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/overrides/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete credit override: ${res.status}`));
+}
+
 /** Dry run — writes nothing. */
 export async function previewCreditPublish(): Promise<PublishPreview> {
   const res = await apiFetch(`${API_BASE}/api/admin/credits/publish/preview`);
