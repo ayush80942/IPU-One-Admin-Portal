@@ -323,6 +323,9 @@ export interface SubjectResult {
   graceApplied: boolean | null;
   /** True when this paper has no resolved credit rule — credits is null, not 0. */
   creditsMissing: boolean | null;
+  /** True when GGSIPU listed this paper more than once within the semester — the student
+   *  reappeared or cleared a backlog for it, and marks/grade shown are the latest attempt. */
+  reappeared: boolean | null;
 }
 
 export interface SemesterResult {

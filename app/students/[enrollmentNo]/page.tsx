@@ -135,7 +135,12 @@ function SemesterRow({ semester, subjects }: { semester: SemesterResult; subject
                     <td className="px-4 py-2 text-right tabular-nums">{s.credits ?? "—"}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{s.totalMarks ?? "—"}</td>
                     <td className="px-4 py-2">
-                      <Pill color={g.color} colorFaint={g.colorFaint}>{s.grade || s.status || "—"}</Pill>
+                      <div className="flex items-center gap-1.5">
+                        <Pill color={g.color} colorFaint={g.colorFaint}>{s.grade || s.status || "—"}</Pill>
+                        {s.reappeared && (
+                          <Pill color="text-muted" colorFaint="bg-foreground/10">Reappear</Pill>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
