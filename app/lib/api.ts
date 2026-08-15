@@ -149,6 +149,9 @@ export interface AdminSession {
   displayName: string;
   role: AdminRole;
   institutes: AdminInstitute[];
+  /** StudentFeature names (see feature-flags) enabled across `institutes` — a super admin gets
+   *  every feature regardless of flags, since they're the one who sets them. */
+  enabledFeatures: string[];
 }
 
 export interface AdminUser extends AdminSession {
@@ -459,6 +462,42 @@ export async function updateInstitute(instituteCode: string, update: InstituteUp
   });
   if (!res.ok) throw new Error(`Failed to update institute: ${res.status}`);
   return res.json();
+}
+
+// ===== Feature flags (SUPER_ADMIN only) =====
+// Which student tabs (see StudentFeature on the backend) each school has switched on. Home,
+// Results, and Profile aren't here — the app always shows those regardless.
+export const STUDENT_FEATURES = ["NOTICES", "FEES", "DOCUMENTS", "PLACEMENT", "FEEDBACK", "ATTENDANCE"] as const;
+export type StudentFeature = (typeof STUDENT_FEATURES)[number];
+
+export const FEATURE_LABEL: Record<StudentFeature, string> = {
+  NOTICES: "Notices",
+  FEES: "Fee Payments",
+  DOCUMENTS: "Collect Documents",
+  PLACEMENT: "Placements",
+  FEEDBACK: "Feedback",
+  ATTENDANCE: "Attendance",
+};
+
+export interface InstituteFeatureFlags {
+  instituteCode: string;
+  instituteName: string;
+  enabledFeatures: string[];
+}
+
+export async function fetchFeatureFlags(): Promise<InstituteFeatureFlags[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/feature-flags`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch feature flags: ${res.status}`));
+  return res.json();
+}
+
+export async function setFeatureFlag(instituteCode: string, feature: StudentFeature, enabled: boolean): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/admin/feature-flags`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instituteCode, feature, enabled }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update feature flag: ${res.status}`));
 }
 
 // ===== Fee types =====
