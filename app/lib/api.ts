@@ -544,6 +544,10 @@ export interface GroupedPaper {
   programCodes: string[];
   studentCount: number;
   seenInResults: boolean;
+  /** Which scheme session(s) placed this paper here, pipe-separated (e.g. "2021-22|2022-23" or
+   *  "2026-27 NEP") — display only, says nothing about which credit value applies. Null when the
+   *  row came only from an imported result and no scheme names a session. */
+  schemeSessions: string | null;
 }
 
 export interface GroupedSemester {

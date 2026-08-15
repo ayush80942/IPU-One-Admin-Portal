@@ -585,6 +585,11 @@ function PaperRow({ paper, onChanged }: { paper: GroupedPaper; onChanged: () => 
             <Pill color={groupStyle.color} colorFaint={groupStyle.colorFaint}>{paper.paperGroup}</Pill>
           )}
         </div>
+        {paper.schemeSessions && (
+          <div className="text-[11px] text-muted mt-0.5" title="Which scheme session placed this paper here">
+            {paper.schemeSessions.split("|").join(", ")}
+          </div>
+        )}
       </td>
       <td className="px-4 py-2.5">
         {readOnly ? (
