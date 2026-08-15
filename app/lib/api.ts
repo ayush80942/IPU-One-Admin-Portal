@@ -373,6 +373,23 @@ export async function fetchStudentDetail(enrollmentNo: string): Promise<StudentD
   return res.json();
 }
 
+// ===== Unlinked signups (SUPER_ADMIN only) =====
+/** Someone who signed in but never completed the GGSIPU import that links them to a Student
+ *  row — so they don't show up anywhere else in the portal. */
+export interface UnlinkedUser {
+  id: string;
+  name: string | null;
+  email: string;
+  createdAt: string;
+  providers: string[];
+}
+
+export async function fetchUnlinkedUsers(): Promise<UnlinkedUser[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/unlinked-users`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch unlinked users: ${res.status}`));
+  return res.json();
+}
+
 // ===== Document types =====
 export interface DocumentResponse {
   id: number;

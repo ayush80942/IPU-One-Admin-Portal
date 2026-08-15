@@ -7,6 +7,7 @@ import {
   Receipt,
   Calculator,
   ShieldCheck,
+  UserX,
   type LucideIcon,
 } from "lucide-react";
 import type { AdminSession } from "./api";
@@ -34,6 +35,7 @@ export const NAV_ITEMS: NavItem[] = [
   // naming its institute, so splitting them across two sidebar entries only made that awkward.
   { href: "/institutes", label: "Institutes & Courses", icon: Landmark, superOnly: true },
   { href: "/admins", label: "Admins", icon: ShieldCheck, superOnly: true },
+  { href: "/unlinked-users", label: "Unlinked Signups", icon: UserX, superOnly: true },
 ];
 
 export function navItemsFor(session: AdminSession | null): NavItem[] {
