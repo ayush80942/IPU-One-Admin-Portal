@@ -475,7 +475,7 @@ export const FEATURE_LABEL: Record<StudentFeature, string> = {
   FEES: "Fee Payments",
   DOCUMENTS: "Collect Documents",
   PLACEMENT: "Placements",
-  FEEDBACK: "Feedback",
+  FEEDBACK: "Faculty Feedback",
   ATTENDANCE: "Attendance",
 };
 

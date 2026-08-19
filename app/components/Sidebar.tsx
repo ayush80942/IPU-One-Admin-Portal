@@ -32,7 +32,7 @@ export default function Sidebar() {
       <div className="flex items-center gap-3 mb-9">
         <Image
           src="/logo.png"
-          alt="GGSIPU"
+          alt="IPU One"
           width={40}
           height={40}
           className="rounded-full shrink-0"

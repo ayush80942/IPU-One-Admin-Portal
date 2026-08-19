@@ -33,15 +33,16 @@ function LoginForm() {
   return (
     <div className="w-full max-w-sm">
       <div className="flex flex-col items-center mb-8">
-        {/* The same university lockup the Android app shows on its sign-in screen
-            (IPUOneApp res/drawable/logo.png), so the two front doors match. */}
+        {/* The IPU One mark, not the university's — this app isn't affiliated with GGSIPU.
+            Diverges from the Android app's sign-in screen (IPUOneApp res/drawable/logo.png),
+            which still shows the university lockup; that one's unchanged for now. */}
         <Image
-          src="/university-logo.png"
-          alt="Guru Gobind Singh Indraprastha University"
-          width={640}
-          height={166}
+          src="/logo.png"
+          alt="IPU One"
+          width={88}
+          height={88}
           priority
-          className="w-full max-w-[260px] h-auto"
+          className="rounded-2xl"
         />
         <h1 className="text-[20px] font-extrabold text-primary mt-6">IPU One</h1>
         <p className="text-[13px] text-muted mt-0.5">Student Cell Portal</p>
