@@ -22,28 +22,25 @@ export function useIsSuperAdmin(): boolean {
   return useContext(SessionContext)?.role === "SUPER_ADMIN";
 }
 
-/** Routes reachable with no admin session at all — rendered standalone, no sidebar, no probe. */
-const PUBLIC_ROUTES = ["/login", "/support"];
-
 /**
- * Wraps every page except the sign-in screen and the public bug-report form. This is a
- * convenience gate, not the security boundary — the real enforcement is the backend refusing
- * any admin route without a valid bearer token, and narrowing every read to the institutes that
- * token's account covers. Its job is to keep an unauthenticated visitor from seeing an
- * application shell full of failed requests, to send an expired session back to sign-in, and to
- * keep an institute admin off the university-wide pages the backend would refuse anyway.
+ * Wraps every page except the sign-in screen. This is a convenience gate, not the security
+ * boundary — the real enforcement is the backend refusing any admin route without a valid
+ * bearer token, and narrowing every read to the institutes that token's account covers. Its job
+ * is to keep an unauthenticated visitor from seeing an application shell full of failed
+ * requests, to send an expired session back to sign-in, and to keep an institute admin off the
+ * university-wide pages the backend would refuse anyway.
  */
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
-  const [state, setState] = useState<"checking" | "in" | "out">(isPublicRoute ? "in" : "checking");
+  const isLoginRoute = pathname === "/login";
+  const [state, setState] = useState<"checking" | "in" | "out">(isLoginRoute ? "in" : "checking");
   const [session, setSession] = useState<AdminSession | null>(null);
 
   useEffect(() => {
-    // Public routes return children before `state` is ever read, so there is nothing to set
-    // here - just skip the session probe.
-    if (isPublicRoute) return;
+    // The sign-in route returns children before `state` is ever read, so there is nothing to
+    // set here - just skip the session probe.
+    if (isLoginRoute) return;
 
     let cancelled = false;
     verifySession().then((admin) => {
@@ -63,9 +60,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     });
 
     return () => { cancelled = true; };
-  }, [pathname, isPublicRoute, router]);
+  }, [pathname, isLoginRoute, router]);
 
-  if (isPublicRoute) {
+  if (isLoginRoute) {
     return <>{children}</>;
   }
 

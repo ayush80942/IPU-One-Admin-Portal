@@ -844,7 +844,8 @@ export async function publishCredits(): Promise<PublishPreview> {
 }
 
 // ---------------------------------------------------------------------------
-// Support tickets — the public /support bug-report form and its admin queue.
+// Support tickets — the admin queue for reports submitted through the public
+// /support form on the marketing site (ipuone_website), not this portal.
 // ---------------------------------------------------------------------------
 
 // Mirrors support/entity/SupportCategory on the backend. Covers the app end-to-end, with
@@ -877,16 +878,6 @@ export const SUPPORT_CATEGORY_LABEL: Record<SupportCategory, string> = {
 
 export type SupportTicketStatus = "OPEN" | "RESOLVED";
 
-export interface SupportTicketRequest {
-  name?: string;
-  email?: string;
-  enrollmentNo?: string;
-  category: SupportCategory;
-  description: string;
-  /** Raw base64 or a "data:<mime>;base64,..." URL. */
-  screenshotBase64?: string;
-}
-
 export interface SupportTicketResponse {
   id: number;
   name: string | null;
@@ -897,22 +888,6 @@ export interface SupportTicketResponse {
   screenshotUrl: string | null;
   status: SupportTicketStatus;
   createdAt: string;
-}
-
-/**
- * The one call in this file made from outside the signed-in portal — the public /support page,
- * open to a student with no session. Still routed through apiFetch so a stale admin token
- * sitting in this browser's sessionStorage doesn't get attached to a stranger's bug report; the
- * backend route is unauthenticated regardless (see SecurityConfig).
- */
-export async function submitSupportTicket(ticket: SupportTicketRequest): Promise<SupportTicketResponse> {
-  const res = await apiFetch(`${API_BASE}/api/support/tickets`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(ticket),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res, `Failed to submit: ${res.status}`));
-  return res.json();
 }
 
 export async function fetchSupportTickets(): Promise<SupportTicketResponse[]> {
