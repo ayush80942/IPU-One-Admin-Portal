@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   UserX,
   ToggleLeft,
+  LifeBuoy,
   type LucideIcon,
 } from "lucide-react";
 import type { AdminSession, StudentFeature } from "./api";
@@ -35,6 +36,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/students", label: "Students", icon: Users },
   { href: "/documents", label: "Documents", icon: FileCheck2, feature: "DOCUMENTS" },
   { href: "/fees", label: "Fee Payments", icon: Receipt, feature: "FEES" },
+  // Not institute-scoped (see SupportTicketService's Javadoc) — every admin sees the whole
+  // queue, same as a super admin would.
+  { href: "/support-tickets", label: "Support Tickets", icon: LifeBuoy },
   { href: "/credits", label: "Credits", icon: Calculator },
   // Institutes and courses are one page with a view switch — a course cannot be created without
   // naming its institute, so splitting them across two sidebar entries only made that awkward.

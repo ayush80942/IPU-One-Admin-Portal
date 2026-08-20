@@ -842,3 +842,91 @@ export async function publishCredits(): Promise<PublishPreview> {
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to publish credits: ${res.status}`));
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Support tickets — the public /support bug-report form and its admin queue.
+// ---------------------------------------------------------------------------
+
+// Mirrors support/entity/SupportCategory on the backend. Covers the app end-to-end, with
+// signing-up/importing-results split out on their own since onboarding is where most reports
+// come from before a student ever reaches the rest of the app.
+export const SUPPORT_CATEGORIES = [
+  "SIGNUP_LOGIN",
+  "RESULT_IMPORT",
+  "RESULTS_DASHBOARD",
+  "NOTICES",
+  "DOCUMENTS",
+  "FEES",
+  "PROFILE",
+  "APP_CRASH",
+  "OTHER",
+] as const;
+export type SupportCategory = (typeof SUPPORT_CATEGORIES)[number];
+
+export const SUPPORT_CATEGORY_LABEL: Record<SupportCategory, string> = {
+  SIGNUP_LOGIN: "Signing up or logging in",
+  RESULT_IMPORT: "Importing results (captcha, GGSIPU login)",
+  RESULTS_DASHBOARD: "Results, CGPA or marks look wrong",
+  NOTICES: "Notices",
+  DOCUMENTS: "Submitting documents",
+  FEES: "Fee payments",
+  PROFILE: "My profile",
+  APP_CRASH: "App crashed or froze",
+  OTHER: "Something else",
+};
+
+export type SupportTicketStatus = "OPEN" | "RESOLVED";
+
+export interface SupportTicketRequest {
+  name?: string;
+  email?: string;
+  enrollmentNo?: string;
+  category: SupportCategory;
+  description: string;
+  /** Raw base64 or a "data:<mime>;base64,..." URL. */
+  screenshotBase64?: string;
+}
+
+export interface SupportTicketResponse {
+  id: number;
+  name: string | null;
+  email: string | null;
+  enrollmentNo: string | null;
+  category: SupportCategory;
+  description: string;
+  screenshotUrl: string | null;
+  status: SupportTicketStatus;
+  createdAt: string;
+}
+
+/**
+ * The one call in this file made from outside the signed-in portal — the public /support page,
+ * open to a student with no session. Still routed through apiFetch so a stale admin token
+ * sitting in this browser's sessionStorage doesn't get attached to a stranger's bug report; the
+ * backend route is unauthenticated regardless (see SecurityConfig).
+ */
+export async function submitSupportTicket(ticket: SupportTicketRequest): Promise<SupportTicketResponse> {
+  const res = await apiFetch(`${API_BASE}/api/support/tickets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(ticket),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to submit: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchSupportTickets(): Promise<SupportTicketResponse[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/support/tickets`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch support tickets: ${res.status}`));
+  return res.json();
+}
+
+export async function setSupportTicketStatus(id: number, status: SupportTicketStatus): Promise<SupportTicketResponse> {
+  const res = await apiFetch(`${API_BASE}/api/admin/support/tickets/${id}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update ticket: ${res.status}`));
+  return res.json();
+}
