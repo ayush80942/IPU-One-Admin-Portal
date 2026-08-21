@@ -8,12 +8,15 @@ import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
 import GroupedRules from "./GroupedRules";
 import SchemeErasSection from "./SchemeEras";
+import ConflictsPanel from "./Conflicts";
 import {
   fetchGroupedCreditRules,
+  fetchCreditConflicts,
   previewCreditPublish,
   publishCredits,
   PublishPreview,
   GroupedCredits,
+  PaperConflict,
 } from "../lib/api";
 
 const TH = "px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide";
@@ -25,6 +28,7 @@ export default function CreditsPage() {
   // actually need it for - checking what a paper of theirs is worth.
   const canEdit = useIsSuperAdmin();
   const [grouped, setGrouped] = useState<GroupedCredits | null>(null);
+  const [conflicts, setConflicts] = useState<PaperConflict[]>([]);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<PublishPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -32,7 +36,12 @@ export default function CreditsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setGrouped(await fetchGroupedCreditRules());
+      const [groupedResult, conflictsResult] = await Promise.all([
+        fetchGroupedCreditRules(),
+        fetchCreditConflicts(),
+      ]);
+      setGrouped(groupedResult);
+      setConflicts(conflictsResult);
     } catch (err) {
       toast(`Failed to load credits: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
@@ -126,6 +135,8 @@ export default function CreditsPage() {
       </div>
       )}
 
+      {canEdit && <ConflictsPanel conflicts={conflicts} />}
+
       {canEdit && <SchemeErasSection onChanged={load} />}
 
       <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
@@ -200,6 +211,18 @@ function PublishDialog({
                   : "Stored credits change, but no student's SGPA works out differently."}
               </p>
 
+              {preview.papers.some((p) => p.institutesAffected > 1) && (
+                <div className="flex items-start gap-2 border border-danger/30 bg-danger-faint rounded-xl px-3 py-2.5 mb-4">
+                  <AlertTriangle className="w-3.5 h-3.5 text-danger shrink-0 mt-0.5" />
+                  <p className="text-[12.5px] text-danger">
+                    Some papers below change credits at more than one institute. If that
+                    wasn&apos;t the intent, the paper code is likely reused for a different
+                    subject elsewhere — cancel and add a scheme-era override scoped to the
+                    institute you meant to fix instead of publishing this.
+                  </p>
+                </div>
+              )}
+
               <div className="border border-border rounded-xl overflow-hidden">
                 <table className="w-full text-[13px]">
                   <thead>
@@ -207,6 +230,7 @@ function PublishDialog({
                       <th className={TH}>Paper</th>
                       <th className={TH}>Change</th>
                       <th className={TH}>Rows</th>
+                      <th className={TH}>Institutes</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -219,6 +243,9 @@ function PublishDialog({
                           <span className="font-bold text-primary">{p.newCredits}</span>
                         </td>
                         <td className="px-4 py-2 tabular-nums text-muted">{p.subjectRows}</td>
+                        <td className={`px-4 py-2 tabular-nums ${p.institutesAffected > 1 ? "font-bold text-danger" : "text-muted"}`}>
+                          {p.institutesAffected}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

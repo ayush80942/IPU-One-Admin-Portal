@@ -646,7 +646,10 @@ export interface PublishPreview {
   subjectsChanged: number;
   semestersChanged: number;
   studentsAffected: number;
-  papers: { paperCode: string; oldCredits: number; newCredits: number; subjectRows: number }[];
+  /** institutesAffected > 1 on a paper is the signature of a base rule reaching a same-coded
+   *  subject at an institute the change wasn't meant to touch — see CreditAdminService's
+   *  cross-scope guard on the backend. */
+  papers: { paperCode: string; oldCredits: number; newCredits: number; subjectRows: number; institutesAffected: number }[];
 }
 
 /**
@@ -840,6 +843,61 @@ export async function previewCreditPublish(): Promise<PublishPreview> {
 export async function publishCredits(): Promise<PublishPreview> {
   const res = await apiFetch(`${API_BASE}/api/admin/credits/publish`, { method: "POST" });
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to publish credits: ${res.status}`));
+  return res.json();
+}
+
+/** One (institute, programme, scheme era) group's currently-recorded credits for a paper code
+ *  that disagrees with at least one other such group. */
+export interface ScopeGroup {
+  instituteCode: string | null;
+  programCode: string | null;
+  schemeEra: string;
+  credits: number;
+  studentCount: number;
+}
+
+/** A paper code whose already-imported subjects disagree on credits across more than one group,
+ *  none of them protected by a scheme-era override — editing the base rule for it is refused. */
+export interface PaperConflict {
+  paperCode: string;
+  groups: ScopeGroup[];
+}
+
+export async function fetchCreditConflicts(): Promise<PaperConflict[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/conflicts`);
+  if (!res.ok) throw new Error(`Failed to fetch credit conflicts: ${res.status}`);
+  return res.json();
+}
+
+export interface SubjectCreditOverrideResult {
+  enrollmentNo: string;
+  semester: number;
+  paperCode: string;
+  oldCredits: number;
+  newCredits: number;
+  oldSgpa: number | null;
+  newSgpa: number | null;
+}
+
+/**
+ * Hand-corrects one student's one already-imported subject's credits, bypassing credit_rules and
+ * credit_rule_overrides entirely — for a paper code a scoped override can't cleanly express (see
+ * SubjectCreditOverrideService's Javadoc on the backend). Touches exactly this one subject row;
+ * shared rules and every other student are untouched, permanently.
+ */
+export async function overrideSubjectCredits(
+  enrollmentNo: string,
+  semester: number,
+  paperCode: string,
+  credits: number,
+  reason: string
+): Promise<SubjectCreditOverrideResult> {
+  const res = await apiFetch(`${API_BASE}/api/admin/credits/subjects/override`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enrollmentNo, semester, paperCode, credits, reason }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to override subject credits: ${res.status}`));
   return res.json();
 }
 

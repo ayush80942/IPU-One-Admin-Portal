@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useToast } from "../../components/Toast";
+import { useIsSuperAdmin } from "../../components/AuthGate";
 import StatTile from "../../components/StatTile";
 import Pill from "../../components/Pill";
 import EmptyState from "../../components/EmptyState";
@@ -24,8 +25,10 @@ import { AuthedImage } from "../../components/AuthedFile";
 import FeeSubmissionDialog from "../../components/FeeSubmissionDialog";
 import {
   fetchStudentDetail,
+  overrideSubjectCredits,
   StudentDetail,
   SemesterResult,
+  SubjectResult,
   DocumentResponse,
   FeeSubmissionDetail,
 } from "../../lib/api";
@@ -89,8 +92,22 @@ function gradeColor(status: string | null) {
   return { color: "text-success", colorFaint: "bg-success-faint" };
 }
 
-function SemesterRow({ semester, subjects }: { semester: SemesterResult; subjects: StudentDetail["results"]["subjects"][string] | undefined }) {
+function SemesterRow({
+  semester,
+  subjects,
+  enrollmentNo,
+  canOverrideCredits,
+  onChanged,
+}: {
+  semester: SemesterResult;
+  subjects: StudentDetail["results"]["subjects"][string] | undefined;
+  enrollmentNo: string;
+  canOverrideCredits: boolean;
+  onChanged: () => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<SubjectResult | null>(null);
+
   return (
     <div className="border border-border rounded-xl overflow-hidden">
       <button
@@ -132,7 +149,20 @@ function SemesterRow({ semester, subjects }: { semester: SemesterResult; subject
                   <tr key={`${s.paperCode}-${i}`} className="border-b border-border last:border-b-0">
                     <td className="px-4 py-2 font-mono">{s.paperCode}</td>
                     <td className="px-4 py-2">{s.subjectName || "—"}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{s.credits ?? "—"}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      <span className="inline-flex items-center gap-1.5">
+                        {s.credits ?? "—"}
+                        {canOverrideCredits && (
+                          <button
+                            onClick={() => setEditing(s)}
+                            title="Fix this subject's credits — affects only this student"
+                            className="text-[10px] font-semibold text-primary hover:underline"
+                          >
+                            fix
+                          </button>
+                        )}
+                      </span>
+                    </td>
                     <td className="px-4 py-2 text-right tabular-nums">{s.totalMarks ?? "—"}</td>
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-1.5">
@@ -149,6 +179,105 @@ function SemesterRow({ semester, subjects }: { semester: SemesterResult; subject
           </table>
         </div>
       )}
+
+      {editing && (
+        <SubjectCreditOverrideDialog
+          enrollmentNo={enrollmentNo}
+          semester={semester.semester}
+          subject={editing}
+          onClose={() => setEditing(null)}
+          onDone={() => { setEditing(null); onChanged(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Hand-corrects one subject's credits for this student only — see overrideSubjectCredits's
+ * Javadoc-equivalent comment in lib/api.ts. Used for a paper code that means two different
+ * subjects across students in a way a shared credit rule or scheme-era override can't safely
+ * express; the fix touches exactly this one row and nothing else.
+ */
+function SubjectCreditOverrideDialog({
+  enrollmentNo,
+  semester,
+  subject,
+  onClose,
+  onDone,
+}: {
+  enrollmentNo: string;
+  semester: number;
+  subject: SubjectResult;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const { toast } = useToast();
+  const [credits, setCredits] = useState(String(subject.credits ?? 0));
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    const n = Number(credits);
+    if (!Number.isInteger(n) || n < 0 || n > 50) {
+      toast("Credits must be a whole number between 0 and 50", "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await overrideSubjectCredits(enrollmentNo, semester, subject.paperCode, n, reason);
+      toast(`${subject.paperCode}: ${result.oldCredits} → ${result.newCredits} credits`, "success");
+      onDone();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to save", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="bg-surface rounded-2xl shadow-xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-[14px] font-bold text-primary mb-1">Fix credits — {subject.paperCode}</h3>
+        <p className="text-[12px] text-muted mb-4">{subject.subjectName || "—"} · Semester {semester}</p>
+
+        <label className="block text-[12px] font-semibold text-muted mb-1">Credits</label>
+        <input
+          type="number"
+          min={0}
+          max={50}
+          value={credits}
+          onChange={(e) => setCredits(e.target.value)}
+          className="w-full border border-border rounded-lg px-3 py-2 text-[13px] mb-3 bg-background"
+        />
+
+        <label className="block text-[12px] font-semibold text-muted mb-1">Reason (optional, kept in the server log)</label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={2}
+          className="w-full border border-border rounded-lg px-3 py-2 text-[13px] mb-4 bg-background"
+        />
+
+        <p className="text-[11px] text-muted mb-4">
+          Changes only this student&apos;s {subject.paperCode} in semester {semester} and recomputes
+          this semester&apos;s SGPA. Shared credit rules, overrides, and every other student are
+          untouched — permanently, including on this student&apos;s next re-import.
+        </p>
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-2 text-[13px] font-semibold text-muted hover:text-foreground">
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg bg-primary text-white text-[13px] font-bold hover:bg-primary-light transition-colors disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -203,6 +332,7 @@ export default function StudentDetailPage() {
   const enrollmentNo = decodeURIComponent(params.enrollmentNo);
   const router = useRouter();
   const { toast } = useToast();
+  const isSuperAdmin = useIsSuperAdmin();
 
   const [detail, setDetail] = useState<StudentDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -366,7 +496,14 @@ export default function StudentDetailPage() {
           ) : (
             <div className="space-y-2">
               {results.semesters.map((sem) => (
-                <SemesterRow key={sem.semester} semester={sem} subjects={results.subjects[String(sem.semester)]} />
+                <SemesterRow
+                  key={sem.semester}
+                  semester={sem}
+                  subjects={results.subjects[String(sem.semester)]}
+                  enrollmentNo={enrollmentNo}
+                  canOverrideCredits={isSuperAdmin}
+                  onChanged={load}
+                />
               ))}
             </div>
           )}
