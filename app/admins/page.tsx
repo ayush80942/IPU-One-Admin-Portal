@@ -170,9 +170,10 @@ export default function AdminsPage() {
                               onClick={() => logInAs(admin)}
                               disabled={impersonating === admin.id}
                               title={`Log in as ${admin.displayName}'s Student Cell portal`}
-                              className="p-1.5 text-muted hover:text-primary hover:bg-primary-faint rounded-lg transition-colors disabled:opacity-50"
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-primary bg-gold-faint hover:bg-gold/25 rounded-lg transition-colors disabled:opacity-50 shrink-0"
                             >
-                              <LogIn className="w-4 h-4" />
+                              <LogIn className="w-3.5 h-3.5" />
+                              {impersonating === admin.id ? "Logging in…" : "Log in as"}
                             </button>
                           )}
                           <button
