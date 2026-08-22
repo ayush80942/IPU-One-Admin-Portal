@@ -152,6 +152,9 @@ export interface AdminSession {
   /** StudentFeature names (see feature-flags) enabled across `institutes` — a super admin gets
    *  every feature regardless of flags, since they're the one who sets them. */
   enabledFeatures: string[];
+  /** Set only while this session is a super admin's "log in as" of this account — the
+   *  impersonating super admin's own email. Drives the persistent banner in AuthGate. */
+  impersonatedByEmail: string | null;
 }
 
 export interface AdminUser extends AdminSession {

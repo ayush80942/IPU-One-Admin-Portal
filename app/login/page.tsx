@@ -3,6 +3,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { Lock, Mail } from "lucide-react";
 import { login } from "../lib/auth";
 
@@ -63,7 +64,12 @@ function LoginForm() {
           />
         </div>
 
-        <label className="block text-[11px] font-semibold text-muted uppercase tracking-wide mb-1.5">Password</label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-[11px] font-semibold text-muted uppercase tracking-wide">Password</label>
+          <Link href="/forgot-password" className="text-[11px] font-semibold text-primary hover:underline">
+            Forgot password?
+          </Link>
+        </div>
         <div className="relative mb-5">
           <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
           <input

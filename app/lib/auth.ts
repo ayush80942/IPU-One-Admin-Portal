@@ -98,3 +98,76 @@ export async function verifySession(): Promise<AdminSession | null> {
     return null;
   }
 }
+
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    return body?.message || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * A super admin "logging in as" another account (see AdminUserService#impersonate on the
+ * backend) - swaps the stored session for the target account's own, with no password exchanged.
+ * The caller is responsible for navigating away afterwards so the whole app shell re-reads the
+ * new session rather than showing a stale super-admin view under an institute admin's token.
+ */
+export async function impersonate(adminId: string): Promise<AdminSession> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/api/admin/admins/${adminId}/impersonate`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, `Couldn't log in as this admin (${res.status})`));
+  }
+  const body = await res.json();
+  storeSession(body.token, body.admin);
+  return body.admin as AdminSession;
+}
+
+/** Hands a super admin their own session back after {@link impersonate}, with no password
+ *  prompt - see AdminAuthController#exitImpersonation on the backend. */
+export async function exitImpersonation(): Promise<AdminSession> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/api/admin/auth/exit-impersonation`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, `Couldn't exit "log in as" (${res.status})`));
+  }
+  const body = await res.json();
+  storeSession(body.token, body.admin);
+  return body.admin as AdminSession;
+}
+
+/**
+ * Requests a password-reset OTP by email. Always resolves the same way whether or not the
+ * address belongs to an account - see AdminAuthController#forgotPassword's Javadoc - so this
+ * never tells the caller which way it went.
+ */
+export async function requestAdminPasswordResetOtp(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/admin/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, `Couldn't send the OTP (${res.status})`));
+  }
+}
+
+/** Verifies the OTP from {@link requestAdminPasswordResetOtp} and sets the new password. */
+export async function resetAdminPasswordWithOtp(email: string, otp: string, newPassword: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/admin/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, otp, newPassword }),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res, `Couldn't reset the password (${res.status})`));
+  }
+}

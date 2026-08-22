@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { KeyRound, LogIn, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { useToast } from "../components/Toast";
 import { useAdminSession } from "../components/AuthGate";
 import PageHeader from "../components/PageHeader";
@@ -9,6 +10,7 @@ import Pill from "../components/Pill";
 import EmptyState from "../components/EmptyState";
 import DetailDialog from "../components/DetailDialog";
 import MultiSelect from "../components/MultiSelect";
+import { impersonate } from "../lib/auth";
 import {
   createAdmin,
   deleteAdmin,
@@ -35,11 +37,13 @@ type Dialog =
 
 export default function AdminsPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const session = useAdminSession();
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [institutes, setInstitutes] = useState<Institute[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [impersonating, setImpersonating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,6 +61,17 @@ export default function AdminsPage() {
   useEffect(() => { load(); }, [load]);
 
   const instituteOptions = useMemo(() => instituteOptionsFrom(institutes), [institutes]);
+
+  const logInAs = async (admin: AdminUser) => {
+    setImpersonating(admin.id);
+    try {
+      await impersonate(admin.id);
+      router.replace("/");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to log in as this admin", "error");
+      setImpersonating(null);
+    }
+  };
 
   const remove = async (admin: AdminUser) => {
     if (!window.confirm(`Delete ${admin.displayName} (${admin.email})? They will lose access immediately.`)) {
@@ -150,6 +165,16 @@ export default function AdminsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
+                          {admin.role === "INSTITUTE_ADMIN" && admin.active && (
+                            <button
+                              onClick={() => logInAs(admin)}
+                              disabled={impersonating === admin.id}
+                              title={`Log in as ${admin.displayName}'s Student Cell portal`}
+                              className="p-1.5 text-muted hover:text-primary hover:bg-primary-faint rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              <LogIn className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => setDialog({ kind: "edit", admin })}
                             className="px-2.5 py-1.5 text-[12px] font-semibold text-primary hover:bg-primary-faint rounded-lg transition-colors"
