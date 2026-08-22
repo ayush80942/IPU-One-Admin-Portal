@@ -241,7 +241,7 @@ function tally(
       count: 1,
     });
   }
-  return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 8);
+  return [...counts.values()].sort((a, b) => b.count - a.count);
 }
 
 function BreakdownCard({
@@ -266,7 +266,12 @@ function BreakdownCard({
       ) : rows.length === 0 ? (
         <p className="text-muted text-[13px]">No student data yet.</p>
       ) : (
-        <div className="space-y-3">
+        // Capped rather than paginated: a growing university means a growing list here, and
+        // scrolling a few dozen bars in place beats either cutting the list short (the old
+        // behaviour - top 8 only, the rest silently dropped) or letting the card stretch the
+        // whole page. max-h-80 is sized to roughly 8 rows, so a short list never shows a
+        // scrollbar in the first place.
+        <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
           {rows.map((row) => (
             <div key={row.code} className="flex items-center gap-3">
               <div className="w-28 shrink-0 text-[12px] text-muted truncate" title={row.title}>{row.label}</div>
