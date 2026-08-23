@@ -49,9 +49,8 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen w-full flex items-center justify-center p-6 bg-background">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <Image src="/logo.png" alt="IPU One" width={88} height={88} priority className="rounded-2xl" />
-          <h1 className="text-[20px] font-extrabold text-primary mt-6">IPU One</h1>
-          <p className="text-[13px] text-muted mt-0.5">Reset your password</p>
+          <Image src="/logo.png" alt="IPU One" width={220} height={132} priority className="h-16 w-auto" />
+          <p className="text-[13px] text-muted mt-6">Reset your password</p>
         </div>
 
         <div className="bg-surface border border-border rounded-2xl shadow-sm p-6">

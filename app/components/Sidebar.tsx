@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { clearSession, instituteLabel } from "../lib/auth";
+import { clearSession } from "../lib/auth";
 import { navItemsFor } from "../lib/nav";
 import { useAdminSession } from "./AuthGate";
 import { usePathname, useRouter } from "next/navigation";
@@ -20,29 +20,17 @@ export default function Sidebar() {
   const pathname = usePathname();
   const navItems = navItemsFor(session);
 
-  // A university admin sees the whole portal, so there is no institute to name; an institute's
-  // Student Cell should be able to tell at a glance whose data they are looking at.
-  const scopeLabel = session?.role === "SUPER_ADMIN"
-    ? "University Admin"
-    : instituteLabel(session) || "Student Cell Portal";
-
   return (
     <aside className="w-[250px] bg-surface border-r border-border flex flex-col p-6 sticky top-0 h-screen shrink-0">
       {/* Logo */}
-      <div className="flex items-center gap-3 mb-9">
+      <div className="mb-9 flex justify-center">
         <Image
           src="/logo.png"
           alt="IPU One"
-          width={40}
-          height={40}
-          className="rounded-full shrink-0"
+          width={180}
+          height={108}
+          className="h-11 w-auto shrink-0"
         />
-        <div className="min-w-0">
-          <div className="font-bold text-[15px] text-primary leading-tight">IPU One</div>
-          <div className="text-[11px] text-muted leading-tight truncate" title={scopeLabel}>
-            {scopeLabel}
-          </div>
-        </div>
       </div>
 
       {/* Navigation */}

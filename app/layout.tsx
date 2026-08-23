@@ -17,6 +17,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "IPU One - Admin Portal",
   description: "Administrative dashboard for IPU One — publish notices, review student documents, and manage registered students and courses.",
+  icons: {
+    // Two variants so the tab icon stays legible whichever way the browser/OS chrome is themed.
+    icon: [
+      { url: "/favicon-light.png", type: "image/png", media: "(prefers-color-scheme: light)" },
+      { url: "/favicon-dark.png", type: "image/png", media: "(prefers-color-scheme: dark)" },
+    ],
+  },
 };
 
 export default function RootLayout({

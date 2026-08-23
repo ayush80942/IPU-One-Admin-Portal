@@ -33,23 +33,22 @@ function LoginForm() {
 
   return (
     <div className="w-full max-w-sm">
-      <div className="flex flex-col items-center mb-8">
-        {/* The IPU One mark, not the university's — this app isn't affiliated with GGSIPU.
-            Diverges from the Android app's sign-in screen (IPUOneApp res/drawable/logo.png),
-            which still shows the university lockup; that one's unchanged for now. */}
-        <Image
-          src="/logo.png"
-          alt="IPU One"
-          width={88}
-          height={88}
-          priority
-          className="rounded-2xl"
-        />
-        <h1 className="text-[20px] font-extrabold text-primary mt-6">IPU One</h1>
-        <p className="text-[13px] text-muted mt-0.5">Student Cell Portal</p>
-      </div>
-
       <form onSubmit={submit} className="bg-surface border border-border rounded-2xl shadow-sm p-6">
+        <div className="flex flex-col items-center mb-8">
+          {/* The IPU One mark, not the university's — this app isn't affiliated with GGSIPU.
+              Diverges from the Android app's sign-in screen (IPUOneApp res/drawable/logo.png),
+              which still shows the university lockup; that one's unchanged for now. */}
+          <Image
+            src="/logo.png"
+            alt="IPU One"
+            width={220}
+            height={132}
+            priority
+            className="h-16 w-auto"
+          />
+          <p className="text-[13px] font-bold text-primary mt-6">Admin Portal</p>
+        </div>
+
         <label className="block text-[11px] font-semibold text-muted uppercase tracking-wide mb-1.5">Email</label>
         <div className="relative mb-4">
           <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
@@ -97,10 +96,6 @@ function LoginForm() {
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
-
-      <p className="text-center text-[11px] text-muted mt-6">
-        Authorised Student Cell staff only.
-      </p>
     </div>
   );
 }
