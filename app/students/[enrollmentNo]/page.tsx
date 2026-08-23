@@ -26,6 +26,7 @@ import FeeSubmissionDialog from "../../components/FeeSubmissionDialog";
 import {
   fetchStudentDetail,
   overrideSubjectCredits,
+  setStudentAlumniStatus,
   StudentDetail,
   SemesterResult,
   SubjectResult,
@@ -339,6 +340,7 @@ export default function StudentDetailPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<DocumentResponse | null>(null);
   const [selectedFeeId, setSelectedFeeId] = useState<number | null>(null);
+  const [savingAlumni, setSavingAlumni] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -388,6 +390,19 @@ export default function StudentDetailPage() {
   const currentFee = feeSubmissions[0] ?? null;
   const currentFeeStatus = currentFee ? FEE_STATUS_META[currentFee.status] : FEE_STATUS_META.NOT_SUBMITTED;
 
+  const toggleAlumni = async () => {
+    setSavingAlumni(true);
+    try {
+      await setStudentAlumniStatus(enrollmentNo, !profile.alumniStatus);
+      toast(profile.alumniStatus ? "Moved back to Students" : "Marked as Alumni", "success");
+      await load();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to update alumni status", "error");
+    } finally {
+      setSavingAlumni(false);
+    }
+  };
+
   return (
     <div>
       <button
@@ -404,8 +419,14 @@ export default function StudentDetailPage() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
             <h1 className="text-xl font-bold text-foreground">{profile.name || "—"}</h1>
-            {profile.passedOut === true && <Pill color="text-success" colorFaint="bg-success-faint">Passed Out</Pill>}
-            {yearSem && profile.passedOut !== true && <Pill color="text-primary" colorFaint="bg-primary-faint">{yearSem}</Pill>}
+            {profile.alumniStatus ? (
+              <Pill color="text-teal" colorFaint="bg-teal-faint">Alumni</Pill>
+            ) : (
+              <>
+                {profile.passedOut === true && <Pill color="text-success" colorFaint="bg-success-faint">Passed Out</Pill>}
+                {yearSem && profile.passedOut !== true && <Pill color="text-primary" colorFaint="bg-primary-faint">{yearSem}</Pill>}
+              </>
+            )}
           </div>
           <div className="text-[13px] font-mono text-muted mt-1">{profile.enrollmentNo}</div>
           <div className="text-[13px] text-muted mt-1">
@@ -413,6 +434,17 @@ export default function StudentDetailPage() {
             {" · "}
             {profile.instituteShortName || profile.instituteName || "—"}
           </div>
+          <button
+            onClick={toggleAlumni}
+            disabled={savingAlumni}
+            className={
+              profile.alumniStatus
+                ? "mt-3 text-[12.5px] font-semibold text-muted hover:text-primary transition-colors disabled:opacity-50"
+                : "mt-3 px-3 py-1.5 rounded-lg bg-teal text-white text-[12.5px] font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+            }
+          >
+            {savingAlumni ? "Saving…" : profile.alumniStatus ? "Move back to Students" : "Mark as Alumni"}
+          </button>
           <div className="flex items-center justify-center sm:justify-start flex-wrap gap-x-5 gap-y-1.5 mt-3 text-[12.5px] text-muted">
             {profile.contactNumber && (
               <span className="inline-flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" />{profile.contactNumber}</span>

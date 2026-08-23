@@ -118,8 +118,10 @@ export interface StudentProfile {
   instituteCode: string | null;
   instituteName: string | null;
   instituteShortName: string | null;
-  // null = unknown (that course's total semester count hasn't been set yet)
+  // null = unknown (that course's total semester count hasn't been set yet) - a suggestion only.
+  // alumniStatus below is the authoritative, admin-set signal for the Students/Alumni split.
   passedOut: boolean | null;
+  alumniStatus: boolean;
   gender: string | null;
   fatherName: string | null;
   motherName: string | null;
@@ -376,6 +378,21 @@ export interface StudentDetail {
 export async function fetchStudentDetail(enrollmentNo: string): Promise<StudentDetail> {
   const res = await apiFetch(`${API_BASE}/api/admin/students/${encodeURIComponent(enrollmentNo)}`);
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch student: ${res.status}`));
+  return res.json();
+}
+
+/**
+ * Moves a student between the Students and Alumni sections — the one write path for
+ * Student.alumniStatus on the backend. Independent of the computed `passedOut` suggestion; an
+ * admin can mark someone alumni early or move them back if it was a mistake.
+ */
+export async function setStudentAlumniStatus(enrollmentNo: string, alumni: boolean): Promise<StudentProfile> {
+  const res = await apiFetch(`${API_BASE}/api/admin/students/${encodeURIComponent(enrollmentNo)}/alumni-status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alumni }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update alumni status: ${res.status}`));
   return res.json();
 }
 

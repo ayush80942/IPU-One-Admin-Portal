@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Users, GraduationCap, CircleCheck, X, ChevronRight } from "lucide-react";
+import { Search, GraduationCap, Landmark, Layers, X, ChevronRight } from "lucide-react";
 import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
@@ -10,22 +10,9 @@ import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
 import Filter, { SELECT_CLASS } from "../components/Filter";
 import { fetchStudents, StudentProfile } from "../lib/api";
-import { calculateYearAndSem } from "../lib/academicYear";
 
 // "" is the all-pass value for every filter, so an empty string never means "unset but active".
 const ALL = "";
-
-const STATUS_OPTIONS = [
-  { value: "ongoing", label: "Ongoing" },
-  { value: "passed", label: "Passed Out" },
-  { value: "unknown", label: "Unknown" },
-];
-
-function yearSemPill(passedOut: boolean | null, batchYear: number | null) {
-  if (passedOut === true) return <Pill color="text-success" colorFaint="bg-success-faint">Pass Out</Pill>;
-  const yearSem = calculateYearAndSem(batchYear);
-  return <Pill color="text-primary" colorFaint="bg-primary-faint">{yearSem || "—"}</Pill>;
-}
 
 // The portal returns raw base64 (sometimes already prefixed as a data URL) — normalize to a data URL for <img>.
 function photoSrc(profileImage: string | null): string | null {
@@ -43,7 +30,7 @@ function Avatar({ profileImage, name, size = 38 }: { profileImage: string | null
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={src}
-        alt={name || "Student"}
+        alt={name || "Alumnus"}
         style={style}
         className="rounded-full object-cover border border-border shrink-0"
         onError={() => setFailed(true)}
@@ -53,7 +40,7 @@ function Avatar({ profileImage, name, size = 38 }: { profileImage: string | null
   return (
     <div
       style={{ ...style, fontSize: size * 0.4 }}
-      className="rounded-full bg-primary-faint text-primary flex items-center justify-center font-bold shrink-0"
+      className="rounded-full bg-teal-faint text-teal flex items-center justify-center font-bold shrink-0"
     >
       {(name || "?").trim().charAt(0).toUpperCase()}
     </div>
@@ -66,7 +53,7 @@ function ActiveFilterChip({ label, onClear }: { label: string; onClear: () => vo
   return (
     <button
       onClick={onClear}
-      className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-primary-faint text-primary text-[11px] font-semibold hover:bg-primary/10 transition-colors"
+      className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-teal-faint text-teal text-[11px] font-semibold hover:bg-teal/10 transition-colors"
     >
       {label}
       <X className="w-3 h-3" />
@@ -74,7 +61,7 @@ function ActiveFilterChip({ label, onClear }: { label: string; onClear: () => vo
   );
 }
 
-export default function StudentsPage() {
+export default function AlumniPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [students, setStudents] = useState<StudentProfile[]>([]);
@@ -84,16 +71,14 @@ export default function StudentsPage() {
   const [instituteCode, setInstituteCode] = useState(ALL);
   const [programCode, setProgramCode] = useState(ALL);
   const [batchYear, setBatchYear] = useState(ALL);
-  const [status, setStatus] = useState(ALL);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const data = await fetchStudents();
-      // Alumni have their own section (see /alumni) — everything below derives from this list.
-      setStudents(data.filter((s) => !s.alumniStatus));
+      setStudents(data.filter((s) => s.alumniStatus));
     } catch (err) {
-      toast(`Failed to load students: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+      toast(`Failed to load alumni: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
       setLoading(false);
     }
@@ -101,7 +86,7 @@ export default function StudentsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Options come from the loaded students rather than the courses/institutes endpoints, so the
+  // Options come from the loaded alumni rather than the courses/institutes endpoints, so the
   // dropdowns can only ever offer a value that some row actually has - no dead-end filters.
   const instituteOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -111,7 +96,7 @@ export default function StudentsPage() {
     return [...map.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [students]);
 
-  // Narrowed by the chosen institute, mirroring how the Fees page chains the two.
+  // Narrowed by the chosen institute, mirroring how the Students page chains the two.
   const programOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const s of students) {
@@ -133,9 +118,6 @@ export default function StudentsPage() {
       if (instituteCode && s.instituteCode !== instituteCode) return false;
       if (programCode && s.programCode !== programCode) return false;
       if (batchYear && String(s.batchYear ?? "") !== batchYear) return false;
-      if (status === "passed" && s.passedOut !== true) return false;
-      if (status === "ongoing" && s.passedOut !== false) return false;
-      if (status === "unknown" && s.passedOut !== null) return false;
       if (!q) return true;
       return (
         s.name?.toLowerCase().includes(q) ||
@@ -147,12 +129,18 @@ export default function StudentsPage() {
         s.email?.toLowerCase().includes(q)
       );
     });
-  }, [students, search, instituteCode, programCode, batchYear, status]);
+  }, [students, search, instituteCode, programCode, batchYear]);
 
-  const passedOutCount = useMemo(() => students.filter((s) => s.passedOut === true).length, [students]);
-  const ongoingCount = useMemo(() => students.filter((s) => s.passedOut === false).length, [students]);
+  const instituteCount = useMemo(
+    () => new Set(students.map((s) => s.instituteCode).filter(Boolean)).size,
+    [students]
+  );
   const courseCount = useMemo(
     () => new Set(students.map((s) => s.programCode).filter(Boolean)).size,
+    [students]
+  );
+  const latestBatch = useMemo(
+    () => students.reduce<number | null>((max, s) => (s.batchYear != null && (max === null || s.batchYear > max) ? s.batchYear : max), null),
     [students]
   );
 
@@ -166,10 +154,6 @@ export default function StudentsPage() {
       clear: () => setProgramCode(ALL),
     },
     batchYear && { label: `Batch ${batchYear}`, clear: () => setBatchYear(ALL) },
-    status && {
-      label: STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status,
-      clear: () => setStatus(ALL),
-    },
     search.trim() && { label: `"${search.trim()}"`, clear: () => setSearch("") },
   ].filter(Boolean) as { label: string; clear: () => void }[];
 
@@ -177,26 +161,25 @@ export default function StudentsPage() {
     setInstituteCode(ALL);
     setProgramCode(ALL);
     setBatchYear(ALL);
-    setStatus(ALL);
     setSearch("");
   };
 
   return (
     <div>
-      <PageHeader title="Students" subtitle="Currently enrolled students who have linked their IPU portal account. Alumni have moved to their own section." />
+      <PageHeader title="Alumni" subtitle="Students an admin has marked as passed out — moved out of the Students section." />
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <StatTile value={loading ? "—" : students.length} label="Students Registered" icon={Users} />
-        <StatTile value={loading ? "—" : ongoingCount} label="Currently Studying" color="info" />
-        <StatTile value={loading ? "—" : passedOutCount} label="Passed Out" color="success" icon={CircleCheck} />
-        <StatTile value={loading ? "—" : courseCount} label="Courses Represented" color="teal" icon={GraduationCap} />
+        <StatTile value={loading ? "—" : students.length} label="Alumni Registered" icon={GraduationCap} color="teal" />
+        <StatTile value={loading ? "—" : instituteCount} label="Institutes Represented" color="info" icon={Landmark} />
+        <StatTile value={loading ? "—" : courseCount} label="Courses Represented" color="primary" icon={Layers} />
+        <StatTile value={loading ? "—" : latestBatch ?? "—"} label="Most Recent Batch" color="success" />
       </div>
 
       {/* Filters — institute narrows the program list, so clearing it also clears the program
           to avoid a stale pair that matches nothing. */}
       <div className="bg-surface border border-border rounded-2xl shadow-sm p-5 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           <Filter label="Institute">
             <select
               value={instituteCode}
@@ -224,15 +207,6 @@ export default function StudentsPage() {
               <option value={ALL}>All Batches</option>
               {batchOptions.map((y) => (
                 <option key={y} value={String(y)}>{y}</option>
-              ))}
-            </select>
-          </Filter>
-
-          <Filter label="Status">
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className={SELECT_CLASS}>
-              <option value={ALL}>All Statuses</option>
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
           </Filter>
@@ -265,7 +239,7 @@ export default function StudentsPage() {
       <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3">
           <h2 className="text-[15px] font-bold text-primary">
-            Student Directory
+            Alumni Directory
             {!loading && (
               <span className="ml-2 text-[12px] font-normal text-muted">
                 {activeFilters.length > 0 ? `${filtered.length} of ${students.length}` : students.length}
@@ -285,24 +259,23 @@ export default function StudentsPage() {
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState
-            icon={Users}
+            icon={GraduationCap}
             message={
               activeFilters.length > 0
-                ? "No students match the current filters."
-                : "No students registered yet."
+                ? "No alumni match the current filters."
+                : "No students have been marked as alumni yet."
             }
           />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[13.5px]">
               <thead>
-                <tr className="bg-primary-faint sticky top-0 z-10">
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Name</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Enrollment No</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Program</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Institute</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Batch</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Year &amp; Sem</th>
+                <tr className="bg-teal-faint sticky top-0 z-10">
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-teal uppercase tracking-wide">Name</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-teal uppercase tracking-wide">Enrollment No</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-teal uppercase tracking-wide">Program</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-teal uppercase tracking-wide">Institute</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-teal uppercase tracking-wide">Batch</th>
                   <th className="px-4 py-3 w-8" />
                 </tr>
               </thead>
@@ -320,7 +293,7 @@ export default function StudentsPage() {
                     tabIndex={0}
                     role="button"
                     aria-label={`View details for ${s.name || s.enrollmentNo}`}
-                    className="group hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer focus:outline-none focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+                    className="group hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer focus:outline-none focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-inset"
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -342,10 +315,11 @@ export default function StudentsPage() {
                     <td className="px-4 py-3" title={s.instituteName || undefined}>
                       {s.instituteShortName || s.instituteName || "—"}
                     </td>
-                    <td className="px-4 py-3 tabular-nums">{s.batchYear || "—"}</td>
-                    <td className="px-4 py-3">{yearSemPill(s.passedOut, s.batchYear)}</td>
+                    <td className="px-4 py-3 tabular-nums">
+                      {s.batchYear ? <Pill color="text-teal" colorFaint="bg-teal-faint">{s.batchYear}</Pill> : "—"}
+                    </td>
                     <td className="px-4 py-3">
-                      <ChevronRight className="w-4 h-4 text-muted/40 group-hover:text-primary transition-colors" />
+                      <ChevronRight className="w-4 h-4 text-muted/40 group-hover:text-teal transition-colors" />
                     </td>
                   </tr>
                 ))}

@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Megaphone,
   Users,
+  GraduationCap,
   FileCheck2,
   Landmark,
   Receipt,
@@ -34,6 +35,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/notices", label: "Notices", icon: Megaphone, feature: "NOTICES" },
   { href: "/students", label: "Students", icon: Users },
+  { href: "/alumni", label: "Alumni", icon: GraduationCap },
   { href: "/documents", label: "Documents", icon: FileCheck2, feature: "DOCUMENTS" },
   { href: "/fees", label: "Fee Payments", icon: Receipt, feature: "FEES" },
   // Not institute-scoped (see SupportTicketService's Javadoc) — every admin sees the whole
