@@ -396,6 +396,25 @@ export async function setStudentAlumniStatus(enrollmentNo: string, alumni: boole
   return res.json();
 }
 
+export interface BulkAlumniImportResult {
+  studentsMarked: number;
+}
+
+/**
+ * Backs the Alumni page's "Import Alumni" popup — marks every not-yet-alumni student in one
+ * batch year across one or more courses as alumni in a single call, instead of one-by-one via
+ * setStudentAlumniStatus. Scoped server-side the same way the rest of the admin directory is.
+ */
+export async function bulkImportAlumni(batchYear: number, programCodes: string[]): Promise<BulkAlumniImportResult> {
+  const res = await apiFetch(`${API_BASE}/api/admin/students/alumni-status/bulk-import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ batchYear, programCodes }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to import alumni: ${res.status}`));
+  return res.json();
+}
+
 // ===== Unlinked signups (SUPER_ADMIN only) =====
 /** Someone who signed in but never completed the GGSIPU import that links them to a Student
  *  row — so they don't show up anywhere else in the portal. */

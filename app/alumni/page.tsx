@@ -2,14 +2,15 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Search, GraduationCap, Landmark, Layers, X, ChevronRight } from "lucide-react";
+import { Search, GraduationCap, Landmark, Layers, Upload, X, ChevronRight } from "lucide-react";
 import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
 import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
 import Filter, { SELECT_CLASS } from "../components/Filter";
-import { fetchStudents, StudentProfile } from "../lib/api";
+import MultiSelect from "../components/MultiSelect";
+import { fetchStudents, bulkImportAlumni, StudentProfile } from "../lib/api";
 
 // "" is the all-pass value for every filter, so an empty string never means "unset but active".
 const ALL = "";
@@ -64,8 +65,11 @@ function ActiveFilterChip({ label, onClear }: { label: string; onClear: () => vo
 export default function AlumniPage() {
   const { toast } = useToast();
   const router = useRouter();
-  const [students, setStudents] = useState<StudentProfile[]>([]);
+  // The full directory, not just alumni — the Import Alumni popup needs to see current students
+  // too, to offer batch/course options and a live count for what it's about to change.
+  const [allStudents, setAllStudents] = useState<StudentProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [importOpen, setImportOpen] = useState(false);
 
   const [search, setSearch] = useState("");
   const [instituteCode, setInstituteCode] = useState(ALL);
@@ -75,8 +79,7 @@ export default function AlumniPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchStudents();
-      setStudents(data.filter((s) => s.alumniStatus));
+      setAllStudents(await fetchStudents());
     } catch (err) {
       toast(`Failed to load alumni: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
@@ -85,6 +88,9 @@ export default function AlumniPage() {
   }, [toast]);
 
   useEffect(() => { load(); }, [load]);
+
+  const students = useMemo(() => allStudents.filter((s) => s.alumniStatus), [allStudents]);
+  const nonAlumni = useMemo(() => allStudents.filter((s) => !s.alumniStatus), [allStudents]);
 
   // Options come from the loaded alumni rather than the courses/institutes endpoints, so the
   // dropdowns can only ever offer a value that some row actually has - no dead-end filters.
@@ -166,7 +172,19 @@ export default function AlumniPage() {
 
   return (
     <div>
-      <PageHeader title="Alumni" subtitle="Students an admin has marked as passed out — moved out of the Students section." />
+      <PageHeader
+        title="Alumni"
+        subtitle="Students an admin has marked as passed out — moved out of the Students section."
+        action={
+          <button
+            onClick={() => setImportOpen(true)}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-[10px] text-[14px] font-semibold text-white bg-teal hover:opacity-90 transition-opacity"
+          >
+            <Upload className="w-4 h-4" strokeWidth={2.5} />
+            Import Alumni
+          </button>
+        }
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
@@ -327,6 +345,147 @@ export default function AlumniPage() {
             </table>
           </div>
         )}
+      </div>
+
+      {importOpen && (
+        <ImportAlumniDialog
+          students={nonAlumni}
+          onClose={() => setImportOpen(false)}
+          onImported={load}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Bulk-marks every current student in one batch year across one or more courses as alumni at
+ * once, instead of the one-by-one "Mark as Alumni" button on each student's detail page. Options
+ * and the live "N students" count are derived entirely from the non-alumni students already
+ * loaded by the Alumni page — no extra round trip until the import itself.
+ */
+function ImportAlumniDialog({
+  students,
+  onClose,
+  onImported,
+}: {
+  students: StudentProfile[];
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const { toast } = useToast();
+  const [instituteCode, setInstituteCode] = useState(ALL);
+  const [batchYear, setBatchYear] = useState(ALL);
+  const [programCodes, setProgramCodes] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
+
+  const instituteOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of students) {
+      if (s.instituteCode) map.set(s.instituteCode, s.instituteShortName || s.instituteName || s.instituteCode);
+    }
+    return [...map.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [students]);
+
+  const batchOptions = useMemo(() => {
+    const years = new Set<number>();
+    for (const s of students) if (s.batchYear != null) years.add(s.batchYear);
+    return [...years].sort((a, b) => b - a);
+  }, [students]);
+
+  // Narrowed by the chosen institute, same cascade as the page's own filters.
+  const programOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of students) {
+      if (instituteCode && s.instituteCode !== instituteCode) continue;
+      if (s.programCode) map.set(s.programCode, s.courseShortName || s.programName || s.programCode);
+    }
+    return [...map.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [students, instituteCode]);
+
+  const matching = useMemo(() => {
+    if (!batchYear || programCodes.length === 0) return [];
+    return students.filter((s) => {
+      if (String(s.batchYear ?? "") !== batchYear) return false;
+      if (!s.programCode || !programCodes.includes(s.programCode)) return false;
+      if (instituteCode && s.instituteCode !== instituteCode) return false;
+      return true;
+    });
+  }, [students, batchYear, programCodes, instituteCode]);
+
+  const submit = async () => {
+    if (matching.length === 0) return;
+    setImporting(true);
+    try {
+      const result = await bulkImportAlumni(Number(batchYear), programCodes);
+      toast(`Marked ${result.studentsMarked} student${result.studentsMarked === 1 ? "" : "s"} as alumni`, "success");
+      onImported();
+      onClose();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to import alumni", "error");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="bg-surface rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-[15px] font-bold text-primary mb-1">Import Alumni</h3>
+        <p className="text-[12.5px] text-muted mb-4">
+          Mark every current student in a batch and course as alumni at once.
+        </p>
+
+        <div className="space-y-4">
+          <Filter label="Institute">
+            <select
+              value={instituteCode}
+              onChange={(e) => { setInstituteCode(e.target.value); setProgramCodes([]); }}
+              className={SELECT_CLASS}
+            >
+              <option value={ALL}>All Institutes</option>
+              {instituteOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </Filter>
+
+          <Filter label="Batch Year">
+            <select value={batchYear} onChange={(e) => setBatchYear(e.target.value)} className={SELECT_CLASS}>
+              <option value={ALL}>Select a batch year…</option>
+              {batchOptions.map((y) => (
+                <option key={y} value={String(y)}>{y}</option>
+              ))}
+            </select>
+          </Filter>
+
+          <MultiSelect
+            label="Courses"
+            options={programOptions}
+            selected={programCodes}
+            onChange={setProgramCodes}
+            placeholder="Select one or more courses…"
+          />
+        </div>
+
+        <div className="mt-5 p-3 rounded-lg bg-teal-faint text-[12.5px] text-teal font-semibold">
+          {batchYear && programCodes.length > 0
+            ? `${matching.length} student${matching.length === 1 ? "" : "s"} will be marked as alumni.`
+            : "Pick a batch year and at least one course to see how many students this affects."}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-3 py-2 text-[13px] font-semibold text-muted hover:text-foreground">
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={importing || matching.length === 0}
+            className="px-4 py-2 rounded-lg bg-teal text-white text-[13px] font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {importing ? "Importing…" : `Import ${matching.length || ""} Student${matching.length === 1 ? "" : "s"}`}
+          </button>
+        </div>
       </div>
     </div>
   );
