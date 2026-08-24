@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Users, GraduationCap, CircleCheck, X, ChevronRight } from "lucide-react";
+import { Search, Users, GraduationCap, X, ChevronRight } from "lucide-react";
 import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
@@ -149,7 +149,6 @@ export default function StudentsPage() {
     });
   }, [students, search, instituteCode, programCode, batchYear, status]);
 
-  const passedOutCount = useMemo(() => students.filter((s) => s.passedOut === true).length, [students]);
   const ongoingCount = useMemo(() => students.filter((s) => s.passedOut === false).length, [students]);
   const courseCount = useMemo(
     () => new Set(students.map((s) => s.programCode).filter(Boolean)).size,
@@ -186,10 +185,9 @@ export default function StudentsPage() {
       <PageHeader title="Students" subtitle="Currently enrolled students who have linked their IPU portal account. Alumni have moved to their own section." />
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <StatTile value={loading ? "—" : students.length} label="Students Registered" icon={Users} />
         <StatTile value={loading ? "—" : ongoingCount} label="Currently Studying" color="info" />
-        <StatTile value={loading ? "—" : passedOutCount} label="Passed Out" color="success" icon={CircleCheck} />
         <StatTile value={loading ? "—" : courseCount} label="Courses Represented" color="teal" icon={GraduationCap} />
       </div>
 

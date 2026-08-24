@@ -434,17 +434,19 @@ export default function StudentDetailPage() {
             {" · "}
             {profile.instituteShortName || profile.instituteName || "—"}
           </div>
-          <button
-            onClick={toggleAlumni}
-            disabled={savingAlumni}
-            className={
-              profile.alumniStatus
-                ? "mt-3 text-[12.5px] font-semibold text-muted hover:text-primary transition-colors disabled:opacity-50"
-                : "mt-3 px-3 py-1.5 rounded-lg bg-teal text-white text-[12.5px] font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
-            }
-          >
-            {savingAlumni ? "Saving…" : profile.alumniStatus ? "Move back to Students" : "Mark as Alumni"}
-          </button>
+          {(profile.alumniStatus || profile.passedOut === true) && (
+            <button
+              onClick={toggleAlumni}
+              disabled={savingAlumni}
+              className={
+                profile.alumniStatus
+                  ? "mt-3 text-[12.5px] font-semibold text-muted hover:text-primary transition-colors disabled:opacity-50"
+                  : "mt-3 px-3 py-1.5 rounded-lg bg-teal text-white text-[12.5px] font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+              }
+            >
+              {savingAlumni ? "Saving…" : profile.alumniStatus ? "Move back to Students" : "Mark as Alumni"}
+            </button>
+          )}
           <div className="flex items-center justify-center sm:justify-start flex-wrap gap-x-5 gap-y-1.5 mt-3 text-[12.5px] text-muted">
             {profile.contactNumber && (
               <span className="inline-flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" />{profile.contactNumber}</span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Search, GraduationCap, Landmark, Layers, Upload, X, ChevronRight } from "lucide-react";
 import { useToast } from "../components/Toast";
@@ -70,16 +70,27 @@ export default function AlumniPage() {
   const [allStudents, setAllStudents] = useState<StudentProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [importOpen, setImportOpen] = useState(false);
+  const [eligiblePopupOpen, setEligiblePopupOpen] = useState(false);
 
   const [search, setSearch] = useState("");
   const [instituteCode, setInstituteCode] = useState(ALL);
   const [programCode, setProgramCode] = useState(ALL);
   const [batchYear, setBatchYear] = useState(ALL);
 
+  // Popup fires once, off the page's own first load — not off a later refresh or the import
+  // dialog closing, so it doesn't nag on top of an action the admin just took.
+  const hasCheckedEligible = useRef(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setAllStudents(await fetchStudents());
+      const data = await fetchStudents();
+      setAllStudents(data);
+      if (!hasCheckedEligible.current) {
+        hasCheckedEligible.current = true;
+        const eligible = data.filter((s) => !s.alumniStatus && s.passedOut === true);
+        if (eligible.length > 0) setEligiblePopupOpen(true);
+      }
     } catch (err) {
       toast(`Failed to load alumni: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
@@ -91,6 +102,10 @@ export default function AlumniPage() {
 
   const students = useMemo(() => allStudents.filter((s) => s.alumniStatus), [allStudents]);
   const nonAlumni = useMemo(() => allStudents.filter((s) => !s.alumniStatus), [allStudents]);
+  // Students still sitting in the Students list whose course-completion signal says they're
+  // done — eligible to be marked alumni but nobody has done it yet. Recomputed live so the
+  // dialog's count (and the "Review & Import" flow that follows it) stays current.
+  const eligibleForAlumni = useMemo(() => nonAlumni.filter((s) => s.passedOut === true), [nonAlumni]);
 
   // Options come from the loaded alumni rather than the courses/institutes endpoints, so the
   // dropdowns can only ever offer a value that some row actually has - no dead-end filters.
@@ -354,6 +369,59 @@ export default function AlumniPage() {
           onImported={load}
         />
       )}
+
+      {eligiblePopupOpen && (
+        <EligibleForAlumniDialog
+          count={eligibleForAlumni.length}
+          onDismiss={() => setEligiblePopupOpen(false)}
+          onReview={() => {
+            setEligiblePopupOpen(false);
+            setImportOpen(true);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Fires once per page visit when students in the Students list have a passedOut signal but
+ * haven't been marked alumni yet — nudges the admin toward Import Alumni instead of leaving
+ * them to notice on their own.
+ */
+function EligibleForAlumniDialog({
+  count,
+  onDismiss,
+  onReview,
+}: {
+  count: number;
+  onDismiss: () => void;
+  onReview: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onDismiss}>
+      <div className="bg-surface rounded-2xl shadow-xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="w-10 h-10 rounded-full bg-teal-faint text-teal flex items-center justify-center mb-3">
+          <GraduationCap className="w-5 h-5" />
+        </div>
+        <h3 className="text-[15px] font-bold text-primary mb-1">Students ready to become alumni</h3>
+        <p className="text-[12.5px] text-muted mb-5">
+          {count} student{count === 1 ? "" : "s"} on the Students page{" "}
+          {count === 1 ? "has" : "have"} completed their course. Mark {count === 1 ? "them" : "them"} as alumni to
+          move {count === 1 ? "that student" : "those students"} into this section.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button onClick={onDismiss} className="px-3 py-2 text-[13px] font-semibold text-muted hover:text-foreground">
+            Not now
+          </button>
+          <button
+            onClick={onReview}
+            className="px-4 py-2 rounded-lg bg-teal text-white text-[13px] font-bold hover:opacity-90 transition-opacity"
+          >
+            Review &amp; Import
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
