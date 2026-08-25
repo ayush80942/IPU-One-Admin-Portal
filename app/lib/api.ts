@@ -416,19 +416,60 @@ export async function bulkImportAlumni(batchYear: number, programCodes: string[]
 }
 
 // ===== Unlinked signups (SUPER_ADMIN only) =====
+/** One PortalOutageAttempt folded into a signup — did a portal outage plausibly explain why
+ *  they never got past login/import. */
+export interface UnlinkedUserOutageAttempt {
+  outageId: number;
+  attemptType: PortalAttemptType;
+  lastAttemptedAt: string;
+  attemptCount: number;
+}
+
+/** One support ticket filed under the same email as an unlinked signup. */
+export interface UnlinkedUserSupportTicket {
+  id: number;
+  category: SupportCategory;
+  status: SupportTicketStatus;
+  createdAt: string;
+  description: string;
+}
+
+export type UnlinkedUserStatus = "NEEDS_FOLLOW_UP" | "DROPPED_OUT" | "OTHER_ISSUE" | "RESOLVED";
+
 /** Someone who signed in but never completed the GGSIPU import that links them to a Student
- *  row — so they don't show up anywhere else in the portal. */
+ *  row — so they don't show up anywhere else in the portal. `outageAttempts` and
+ *  `supportTickets` are auto-detected from existing data; `status`/`note` are the Student
+ *  Cell's own manual triage, set via updateUnlinkedUserStatus. */
 export interface UnlinkedUser {
   id: string;
   name: string | null;
   email: string;
   createdAt: string;
   providers: string[];
+  outageAttempts: UnlinkedUserOutageAttempt[];
+  supportTickets: UnlinkedUserSupportTicket[];
+  status: UnlinkedUserStatus;
+  note: string | null;
+  statusUpdatedAt: string | null;
 }
 
 export async function fetchUnlinkedUsers(): Promise<UnlinkedUser[]> {
   const res = await apiFetch(`${API_BASE}/api/admin/unlinked-users`);
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch unlinked users: ${res.status}`));
+  return res.json();
+}
+
+export async function updateUnlinkedUserStatus(
+  userId: string,
+  status: UnlinkedUserStatus,
+  note: string
+): Promise<UnlinkedUser> {
+  const res = await apiFetch(`${API_BASE}/api/admin/unlinked-users/${userId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, note }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update status: ${res.status}`));
   return res.json();
 }
 

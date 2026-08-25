@@ -9,6 +9,7 @@ import {
   Calculator,
   ShieldCheck,
   UserX,
+  UserSearch,
   ToggleLeft,
   LifeBuoy,
   ActivitySquare,
@@ -51,6 +52,10 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/institutes", label: "Institutes & Courses", icon: Landmark, superOnly: true },
   { href: "/admins", label: "Admins", icon: ShieldCheck, superOnly: true },
   { href: "/unlinked-users", label: "Unlinked Signups", icon: UserX, superOnly: true },
+  // Cross-references unlinked-users, portal-status (PortalOutageAttempt) and support-tickets for
+  // the same accounts, plus a manual triage status - same SUPER_ADMIN scope as unlinked-users
+  // since it's built on that same list.
+  { href: "/login-issues", label: "Login Issues", icon: UserSearch, superOnly: true },
   { href: "/feature-flags", label: "Feature Flags", icon: ToggleLeft, superOnly: true },
 ];
 
