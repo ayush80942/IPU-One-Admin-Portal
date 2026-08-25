@@ -11,6 +11,7 @@ import {
   UserX,
   ToggleLeft,
   LifeBuoy,
+  ActivitySquare,
   type LucideIcon,
 } from "lucide-react";
 import type { AdminSession, StudentFeature } from "./api";
@@ -41,6 +42,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Not institute-scoped (see SupportTicketService's Javadoc) — every admin sees the whole
   // queue, same as a super admin would.
   { href: "/support-tickets", label: "Support Tickets", icon: LifeBuoy },
+  // Also not institute-scoped — a GGSIPU portal outage isn't any one institute's problem, see
+  // PortalStatusController's Javadoc on the backend.
+  { href: "/portal-status", label: "Portal Status", icon: ActivitySquare },
   { href: "/credits", label: "Credits", icon: Calculator },
   // Institutes and courses are one page with a view switch — a course cannot be created without
   // naming its institute, so splitting them across two sidebar entries only made that awkward.

@@ -1002,3 +1002,57 @@ export async function setSupportTicketStatus(id: number, status: SupportTicketSt
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to update ticket: ${res.status}`));
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Portal status — outage windows detected on the GGSIPU result portal (see
+// PortalHealthCheckScheduler on the backend) and who tried to log in during each one.
+// Not institute-scoped, same as support tickets.
+// ---------------------------------------------------------------------------
+
+export interface PortalStatusSummary {
+  up: boolean;
+  currentOutageStartedAt: string | null;
+  lastCheckedAt: string | null;
+  outagesLast30Days: number;
+  affectedUsersLast30Days: number;
+}
+
+export interface PortalOutageResponse {
+  id: number;
+  startedAt: string;
+  endedAt: string | null;
+  ongoing: boolean;
+  durationMinutes: number;
+  affectedUserCount: number;
+}
+
+export type PortalAttemptType = "CAPTCHA_FETCH" | "LOGIN";
+
+export interface PortalOutageAttemptResponse {
+  userEmail: string;
+  enrollmentNo: string | null;
+  attemptType: PortalAttemptType;
+  firstAttemptedAt: string;
+  lastAttemptedAt: string;
+  attemptCount: number;
+  notified: boolean;
+  notifiedAt: string | null;
+}
+
+export async function fetchPortalStatusSummary(): Promise<PortalStatusSummary> {
+  const res = await apiFetch(`${API_BASE}/api/admin/portal-status/summary`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch portal status: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchPortalOutages(): Promise<PortalOutageResponse[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/portal-status/outages`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch outages: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchPortalOutageAttempts(id: number): Promise<PortalOutageAttemptResponse[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/portal-status/outages/${id}/attempts`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch affected users: ${res.status}`));
+  return res.json();
+}
