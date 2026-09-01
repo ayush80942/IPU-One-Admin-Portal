@@ -11,6 +11,7 @@ import Pill from "../components/Pill";
 import Filter, { SELECT_CLASS } from "../components/Filter";
 import { fetchStudents, StudentProfile } from "../lib/api";
 import { calculateYearAndSem } from "../lib/academicYear";
+import { categoryLabel, CATEGORY_OPTIONS } from "../lib/studentTaxonomy";
 
 // "" is the all-pass value for every filter, so an empty string never means "unset but active".
 const ALL = "";
@@ -85,6 +86,7 @@ export default function StudentsPage() {
   const [programCode, setProgramCode] = useState(ALL);
   const [batchYear, setBatchYear] = useState(ALL);
   const [status, setStatus] = useState(ALL);
+  const [category, setCategory] = useState(ALL);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,6 +129,13 @@ export default function StudentsPage() {
     return [...years].sort((a, b) => b - a);
   }, [students]);
 
+  // Only categories some student actually has, same reasoning as instituteOptions above -
+  // most students won't have entered one yet, so a static full list would mostly be dead ends.
+  const categoryOptions = useMemo(() => {
+    const present = new Set(students.map((s) => s.category).filter((c): c is string => !!c));
+    return CATEGORY_OPTIONS.filter((o) => present.has(o.value));
+  }, [students]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return students.filter((s) => {
@@ -136,6 +145,7 @@ export default function StudentsPage() {
       if (status === "passed" && s.passedOut !== true) return false;
       if (status === "ongoing" && s.passedOut !== false) return false;
       if (status === "unknown" && s.passedOut !== null) return false;
+      if (category && s.category !== category) return false;
       if (!q) return true;
       return (
         s.name?.toLowerCase().includes(q) ||
@@ -147,7 +157,7 @@ export default function StudentsPage() {
         s.email?.toLowerCase().includes(q)
       );
     });
-  }, [students, search, instituteCode, programCode, batchYear, status]);
+  }, [students, search, instituteCode, programCode, batchYear, status, category]);
 
   const ongoingCount = useMemo(() => students.filter((s) => s.passedOut === false).length, [students]);
   const courseCount = useMemo(
@@ -169,6 +179,10 @@ export default function StudentsPage() {
       label: STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status,
       clear: () => setStatus(ALL),
     },
+    category && {
+      label: categoryOptions.find((o) => o.value === category)?.label ?? category,
+      clear: () => setCategory(ALL),
+    },
     search.trim() && { label: `"${search.trim()}"`, clear: () => setSearch("") },
   ].filter(Boolean) as { label: string; clear: () => void }[];
 
@@ -177,6 +191,7 @@ export default function StudentsPage() {
     setProgramCode(ALL);
     setBatchYear(ALL);
     setStatus(ALL);
+    setCategory(ALL);
     setSearch("");
   };
 
@@ -230,6 +245,15 @@ export default function StudentsPage() {
             <select value={status} onChange={(e) => setStatus(e.target.value)} className={SELECT_CLASS}>
               <option value={ALL}>All Statuses</option>
               {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </Filter>
+
+          <Filter label="Category">
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className={SELECT_CLASS}>
+              <option value={ALL}>All Categories</option>
+              {categoryOptions.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
@@ -301,6 +325,7 @@ export default function StudentsPage() {
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Institute</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Batch</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Year &amp; Sem</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Category</th>
                   <th className="px-4 py-3 w-8" />
                 </tr>
               </thead>
@@ -342,6 +367,7 @@ export default function StudentsPage() {
                     </td>
                     <td className="px-4 py-3 tabular-nums">{s.batchYear || "—"}</td>
                     <td className="px-4 py-3">{yearSemPill(s.passedOut, s.batchYear)}</td>
+                    <td className="px-4 py-3">{s.category ? categoryLabel(s.category) : "—"}</td>
                     <td className="px-4 py-3">
                       <ChevronRight className="w-4 h-4 text-muted/40 group-hover:text-primary transition-colors" />
                     </td>

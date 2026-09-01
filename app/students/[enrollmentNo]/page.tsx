@@ -35,6 +35,7 @@ import {
 } from "../../lib/api";
 import { calculateYearAndSem, academicYearLabel } from "../../lib/academicYear";
 import { FEE_STATUS_META, formatAmount } from "../../lib/fees";
+import { categoryLabel, subCategoryLabel } from "../../lib/studentTaxonomy";
 
 function photoSrc(profileImage: string | null): string | null {
   if (!profileImage) return null;
@@ -507,6 +508,8 @@ export default function StudentDetailPage() {
             <DetailField label="Email" value={profile.email} />
             <DetailField label="Father's Name" value={profile.fatherName} />
             <DetailField label="Mother's Name" value={profile.motherName} />
+            <DetailField label="Category" value={categoryLabel(profile.category)} />
+            <DetailField label="Sub Category" value={subCategoryLabel(profile.subCategory)} />
           </div>
         </SectionCard>
 

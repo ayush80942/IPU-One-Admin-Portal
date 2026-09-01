@@ -128,6 +128,10 @@ export interface StudentProfile {
   contactNumber: string | null;
   email: string | null;
   profileImage: string | null;
+  // Student-entered from the mobile app (PATCH /api/student/profile) - never set by an admin,
+  // null until the student provides it. See lib/studentTaxonomy.ts for display labels.
+  category: string | null;
+  subCategory: string | null;
 }
 
 // ===== Admin account types =====
