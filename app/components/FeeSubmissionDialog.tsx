@@ -14,6 +14,7 @@ import {
 } from "../lib/api";
 import {
   FEE_CHANNEL_LABELS,
+  FEE_PAYMENT_STATUS_META,
   FEE_STATUS_META,
   formatAmount,
   formatFileSize,
@@ -131,6 +132,39 @@ function TransactionCard({ transaction, index, total }: { transaction: FeeTransa
   );
 }
 
+// Informational only — never gates the Approve/Reject buttons below it. "Counted" mirrors the
+// backend's own rule (FeeStructureUtil / FeeAdminService.toDetailDto): only an APPROVED
+// submission's amount counts towards the structure's total, so a still-pending bank-transfer
+// receipt reads as Not Paid here even if its amount would otherwise be enough.
+function FeeStructureSummary({ detail }: { detail: FeeSubmissionDetail }) {
+  const totalDue = detail.totalDue ?? 0;
+  const amountCounted = detail.status === "APPROVED" ? detail.totalAmount ?? 0 : 0;
+  const meta = detail.paymentStatus ? FEE_PAYMENT_STATUS_META[detail.paymentStatus] : null;
+
+  return (
+    <div className="border border-border rounded-xl p-4 mb-6 bg-background">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h3 className="text-[11px] font-semibold text-muted uppercase tracking-wide">Fee Structure</h3>
+        {meta && <Pill color={meta.color} colorFaint={meta.colorFaint}>{meta.label}</Pill>}
+      </div>
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className="text-[18px] font-bold text-foreground">{formatAmount(amountCounted)}</span>
+        <span className="text-[13px] text-muted">of {formatAmount(totalDue)} due</span>
+      </div>
+      {detail.feeBreakup.length > 0 && (
+        <div className="space-y-1">
+          {detail.feeBreakup.map((item, i) => (
+            <div key={i} className="flex items-center justify-between text-[12.5px] text-muted">
+              <span>{item.label}</span>
+              <span className="tabular-nums">{formatAmount(item.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface FeeSubmissionDialogProps {
   submissionId: number;
   onClose: () => void;
@@ -212,6 +246,8 @@ export default function FeeSubmissionDialog({ submissionId, onClose, onReviewed 
               <span className="font-semibold text-foreground">{formatAmount(detail.totalAmount)}</span>
             </span>
           </div>
+
+          {detail.totalDue != null && <FeeStructureSummary detail={detail} />}
 
           <div className="grid grid-cols-2 gap-x-6 gap-y-4 mb-6">
             <DetailField label="Program" value={detail.programName || detail.programCode} />

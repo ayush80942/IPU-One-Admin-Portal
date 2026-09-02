@@ -576,8 +576,12 @@ export async function setFeatureFlag(instituteCode: string, feature: StudentFeat
 export type FeeStatus = "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
 export type FeeChannel = "FEE_PORTAL" | "BANK_TRANSFER";
 
+export type FeePaymentStatus = "NOT_PAID" | "PARTIAL" | "FULL";
+
 // One student's standing for one academic year. submissionId/submittedAt are null
 // for NOT_SUBMITTED — those rows are the roster of who still owes proof of payment.
+// totalDue/paymentStatus are null when no admin has configured a FeeStructure for this row's
+// (institute, program, admission year, academic year) yet.
 export interface FeeRosterRow {
   enrollmentNo: string;
   name: string | null;
@@ -589,6 +593,8 @@ export interface FeeRosterRow {
   transactionCount: number;
   totalAmount: number | null;
   submittedAt: string | null;
+  totalDue: number | null;
+  paymentStatus: FeePaymentStatus | null;
 }
 
 export interface FeeSummary {
@@ -613,6 +619,11 @@ export interface FeeTransaction {
   uploadedAt: string;
 }
 
+export interface FeeStructureItem {
+  label: string;
+  amount: number;
+}
+
 export interface FeeSubmissionDetail {
   id: number;
   academicYear: number;
@@ -632,6 +643,11 @@ export interface FeeSubmissionDetail {
   transactionCount: number;
   totalAmount: number | null;
   transactions: FeeTransaction[];
+  // Null/empty when no admin has configured a FeeStructure for this student's (institute,
+  // program, admission year, academic year) yet.
+  totalDue: number | null;
+  paymentStatus: FeePaymentStatus | null;
+  feeBreakup: FeeStructureItem[];
 }
 
 export interface FeeRosterFilters {
@@ -699,6 +715,70 @@ export async function reviewFeeSubmission(
   });
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to review submission: ${res.status}`));
   return res.json();
+}
+
+// ===== Fee structure types (what a student owes, not what they've submitted) =====
+
+// Keyed on admissionYear, not batchYear — a fee structure is what a given admitted cohort was
+// charged, unrelated to AcademicYearUtil's own batchYear-based eligibility-window logic.
+export interface FeeStructure {
+  id: number;
+  instituteCode: string;
+  instituteName: string | null;
+  programCode: string;
+  programName: string | null;
+  admissionYear: number;
+  academicYear: number;
+  label: string;
+  totalAmount: number;
+  items: FeeStructureItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FeeStructureUpsertRequest {
+  instituteCode: string;
+  programCode: string;
+  admissionYear: number;
+  academicYear: number;
+  items: FeeStructureItem[];
+}
+
+export interface FeeStructureFilters {
+  instituteCode?: string;
+  programCode?: string;
+  admissionYear?: number;
+  academicYear?: number;
+}
+
+export async function fetchFeeStructures(filters: FeeStructureFilters = {}): Promise<FeeStructure[]> {
+  const params = new URLSearchParams();
+  if (filters.instituteCode) params.set("instituteCode", filters.instituteCode);
+  if (filters.programCode) params.set("programCode", filters.programCode);
+  if (filters.admissionYear) params.set("admissionYear", String(filters.admissionYear));
+  if (filters.academicYear) params.set("academicYear", String(filters.academicYear));
+  const qs = params.toString();
+  const res = await apiFetch(`${API_BASE}/api/admin/fee-structures${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error(`Failed to fetch fee structures: ${res.status}`);
+  return res.json();
+}
+
+/** Creates or replaces the structure for the request's (institute, program, admission year,
+ *  academic year) key — always sends the complete breakup, matching the backend's full-replace
+ *  upsert. */
+export async function saveFeeStructure(request: FeeStructureUpsertRequest): Promise<FeeStructure> {
+  const res = await apiFetch(`${API_BASE}/api/admin/fee-structures`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to save fee structure: ${res.status}`));
+  return res.json();
+}
+
+export async function deleteFeeStructure(id: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/admin/fee-structures/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete fee structure: ${res.status}`));
 }
 
 // ---------------------------------------------------------------------------

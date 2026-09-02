@@ -1,7 +1,7 @@
 // Display metadata and formatting for fee payment verification, shared by the roster
 // table and the submission review dialog.
 
-import type { FeeChannel, FeeStatus } from "./api";
+import type { FeeChannel, FeePaymentStatus, FeeStatus } from "./api";
 
 export interface FeeStatusMeta {
   label: string;
@@ -23,10 +23,18 @@ export const FEE_STATUS_OPTIONS: { value: FeeStatus; label: string }[] = (
   Object.keys(FEE_STATUS_META) as FeeStatus[]
 ).map((value) => ({ value, label: FEE_STATUS_META[value].label }));
 
+// How much of a FeeStructure's total a student has actually gotten counted towards it (only an
+// APPROVED submission's amount counts — see FeeStructureUtil on the backend). Distinct from
+// FeeStatus: a submission can be APPROVED (verified as legitimate) while still only Partial.
+export const FEE_PAYMENT_STATUS_META: Record<FeePaymentStatus, FeeStatusMeta> = {
+  FULL: { label: "Fully Paid", color: "text-success", colorFaint: "bg-success-faint" },
+  PARTIAL: { label: "Partial", color: "text-orange", colorFaint: "bg-orange-faint" },
+  NOT_PAID: { label: "Not Paid", color: "text-danger", colorFaint: "bg-danger-faint" },
+};
+
 export const FEE_CHANNEL_LABELS: Record<FeeChannel, string> = {
   FEE_PORTAL: "Fee Portal",
   BANK_TRANSFER: "Bank Transfer",
-  OTHER: "Other",
 };
 
 // Bank transfer receipts (loans/scholarships) carry a UTR number; fee portal receipts
