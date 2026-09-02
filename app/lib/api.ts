@@ -385,37 +385,25 @@ export async function fetchStudentDetail(enrollmentNo: string): Promise<StudentD
   return res.json();
 }
 
-/**
- * Moves a student between the Students and Alumni sections — the one write path for
- * Student.alumniStatus on the backend. Independent of the computed `passedOut` suggestion; an
- * admin can mark someone alumni early or move them back if it was a mistake.
- */
-export async function setStudentAlumniStatus(enrollmentNo: string, alumni: boolean): Promise<StudentProfile> {
-  const res = await apiFetch(`${API_BASE}/api/admin/students/${encodeURIComponent(enrollmentNo)}/alumni-status`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ alumni }),
-  });
-  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update alumni status: ${res.status}`));
-  return res.json();
-}
-
-export interface BulkAlumniImportResult {
+export interface GraduateBatchResult {
   studentsMarked: number;
 }
 
 /**
- * Backs the Alumni page's "Import Alumni" popup — marks every not-yet-alumni student in one
- * batch year across one or more courses as alumni in a single call, instead of one-by-one via
- * setStudentAlumniStatus. Scoped server-side the same way the rest of the admin directory is.
+ * Backs the Alumni page's "Graduate Batch" popup — moves every not-yet-alumni student in one
+ * batch year, at one institute, across one or more courses to alumni in a single call, and
+ * records the (batchYear, instituteCode, programCode) combinations as standing rules so a
+ * student who only imports for the first time later lands as alumni immediately too. There is no
+ * per-student alumni toggle — a batch is always graduated as a whole. Scoped server-side the same
+ * way the rest of the admin directory is.
  */
-export async function bulkImportAlumni(batchYear: number, programCodes: string[]): Promise<BulkAlumniImportResult> {
-  const res = await apiFetch(`${API_BASE}/api/admin/students/alumni-status/bulk-import`, {
+export async function graduateBatch(batchYear: number, instituteCode: string, programCodes: string[]): Promise<GraduateBatchResult> {
+  const res = await apiFetch(`${API_BASE}/api/admin/students/graduated-batches`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ batchYear, programCodes }),
+    body: JSON.stringify({ batchYear, instituteCode, programCodes }),
   });
-  if (!res.ok) throw new Error(await errorMessage(res, `Failed to import alumni: ${res.status}`));
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to graduate batch: ${res.status}`));
   return res.json();
 }
 
@@ -586,7 +574,7 @@ export async function setFeatureFlag(instituteCode: string, feature: StudentFeat
 
 // ===== Fee types =====
 export type FeeStatus = "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
-export type FeeChannel = "FEE_PORTAL" | "BANK_TRANSFER" | "OTHER";
+export type FeeChannel = "FEE_PORTAL" | "BANK_TRANSFER";
 
 // One student's standing for one academic year. submissionId/submittedAt are null
 // for NOT_SUBMITTED — those rows are the roster of who still owes proof of payment.

@@ -26,7 +26,6 @@ import FeeSubmissionDialog from "../../components/FeeSubmissionDialog";
 import {
   fetchStudentDetail,
   overrideSubjectCredits,
-  setStudentAlumniStatus,
   StudentDetail,
   SemesterResult,
   SubjectResult,
@@ -341,7 +340,6 @@ export default function StudentDetailPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<DocumentResponse | null>(null);
   const [selectedFeeId, setSelectedFeeId] = useState<number | null>(null);
-  const [savingAlumni, setSavingAlumni] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -391,19 +389,6 @@ export default function StudentDetailPage() {
   const currentFee = feeSubmissions[0] ?? null;
   const currentFeeStatus = currentFee ? FEE_STATUS_META[currentFee.status] : FEE_STATUS_META.NOT_SUBMITTED;
 
-  const toggleAlumni = async () => {
-    setSavingAlumni(true);
-    try {
-      await setStudentAlumniStatus(enrollmentNo, !profile.alumniStatus);
-      toast(profile.alumniStatus ? "Moved back to Students" : "Marked as Alumni", "success");
-      await load();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Failed to update alumni status", "error");
-    } finally {
-      setSavingAlumni(false);
-    }
-  };
-
   return (
     <div>
       <button
@@ -435,18 +420,14 @@ export default function StudentDetailPage() {
             {" · "}
             {profile.instituteShortName || profile.instituteName || "—"}
           </div>
-          {(profile.alumniStatus || profile.passedOut === true) && (
-            <button
-              onClick={toggleAlumni}
-              disabled={savingAlumni}
-              className={
-                profile.alumniStatus
-                  ? "mt-3 text-[12.5px] font-semibold text-muted hover:text-primary transition-colors disabled:opacity-50"
-                  : "mt-3 px-3 py-1.5 rounded-lg bg-teal text-white text-[12.5px] font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
-              }
-            >
-              {savingAlumni ? "Saving…" : profile.alumniStatus ? "Move back to Students" : "Mark as Alumni"}
-            </button>
+          {!profile.alumniStatus && profile.passedOut === true && (
+            <p className="mt-3 text-[12.5px] text-muted">
+              Ready to graduate — use{" "}
+              <Link href="/alumni" className="font-semibold text-teal hover:underline">
+                Graduate Batch
+              </Link>{" "}
+              on the Alumni page to move this student&apos;s whole batch to alumni.
+            </p>
           )}
           <div className="flex items-center justify-center sm:justify-start flex-wrap gap-x-5 gap-y-1.5 mt-3 text-[12.5px] text-muted">
             {profile.contactNumber && (

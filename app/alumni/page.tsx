@@ -10,7 +10,7 @@ import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
 import Filter, { SELECT_CLASS } from "../components/Filter";
 import MultiSelect from "../components/MultiSelect";
-import { fetchStudents, bulkImportAlumni, StudentProfile } from "../lib/api";
+import { fetchStudents, graduateBatch, StudentProfile } from "../lib/api";
 
 // "" is the all-pass value for every filter, so an empty string never means "unset but active".
 const ALL = "";
@@ -65,11 +65,11 @@ function ActiveFilterChip({ label, onClear }: { label: string; onClear: () => vo
 export default function AlumniPage() {
   const { toast } = useToast();
   const router = useRouter();
-  // The full directory, not just alumni — the Import Alumni popup needs to see current students
-  // too, to offer batch/course options and a live count for what it's about to change.
+  // The full directory, not just alumni — the Graduate Batch popup needs to see current students
+  // too, to offer institute/batch/course options and a live count for what it's about to change.
   const [allStudents, setAllStudents] = useState<StudentProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [importOpen, setImportOpen] = useState(false);
+  const [graduateOpen, setGraduateOpen] = useState(false);
   const [eligiblePopupOpen, setEligiblePopupOpen] = useState(false);
 
   const [search, setSearch] = useState("");
@@ -189,14 +189,14 @@ export default function AlumniPage() {
     <div>
       <PageHeader
         title="Alumni"
-        subtitle="Students an admin has marked as passed out — moved out of the Students section."
+        subtitle="Batches an admin has marked graduated — every student in a graduated batch moves here together."
         action={
           <button
-            onClick={() => setImportOpen(true)}
+            onClick={() => setGraduateOpen(true)}
             className="flex items-center gap-2 px-5 py-2.5 rounded-[10px] text-[14px] font-semibold text-white bg-teal hover:opacity-90 transition-opacity"
           >
             <Upload className="w-4 h-4" strokeWidth={2.5} />
-            Import Alumni
+            Graduate Batch
           </button>
         }
       />
@@ -362,11 +362,11 @@ export default function AlumniPage() {
         )}
       </div>
 
-      {importOpen && (
-        <ImportAlumniDialog
+      {graduateOpen && (
+        <GraduateBatchDialog
           students={nonAlumni}
-          onClose={() => setImportOpen(false)}
-          onImported={load}
+          onClose={() => setGraduateOpen(false)}
+          onGraduated={load}
         />
       )}
 
@@ -376,7 +376,7 @@ export default function AlumniPage() {
           onDismiss={() => setEligiblePopupOpen(false)}
           onReview={() => {
             setEligiblePopupOpen(false);
-            setImportOpen(true);
+            setGraduateOpen(true);
           }}
         />
       )}
@@ -385,8 +385,8 @@ export default function AlumniPage() {
 }
 
 /**
- * Fires once per page visit when students in the Students list have a passedOut signal but
- * haven't been marked alumni yet — nudges the admin toward Import Alumni instead of leaving
+ * Fires once per page visit when students in the Students list have a passedOut signal but their
+ * batch hasn't been graduated yet — nudges the admin toward Graduate Batch instead of leaving
  * them to notice on their own.
  */
 function EligibleForAlumniDialog({
@@ -404,10 +404,10 @@ function EligibleForAlumniDialog({
         <div className="w-10 h-10 rounded-full bg-teal-faint text-teal flex items-center justify-center mb-3">
           <GraduationCap className="w-5 h-5" />
         </div>
-        <h3 className="text-[15px] font-bold text-primary mb-1">Students ready to become alumni</h3>
+        <h3 className="text-[15px] font-bold text-primary mb-1">Batches ready to graduate</h3>
         <p className="text-[12.5px] text-muted mb-5">
           {count} student{count === 1 ? "" : "s"} on the Students page{" "}
-          {count === 1 ? "has" : "have"} completed their course. Mark {count === 1 ? "them" : "them"} as alumni to
+          {count === 1 ? "has" : "have"} completed their course. Graduate {count === 1 ? "their" : "their"} batch to
           move {count === 1 ? "that student" : "those students"} into this section.
         </p>
         <div className="flex justify-end gap-2">
@@ -418,7 +418,7 @@ function EligibleForAlumniDialog({
             onClick={onReview}
             className="px-4 py-2 rounded-lg bg-teal text-white text-[13px] font-bold hover:opacity-90 transition-opacity"
           >
-            Review &amp; Import
+            Review &amp; Graduate
           </button>
         </div>
       </div>
@@ -427,25 +427,28 @@ function EligibleForAlumniDialog({
 }
 
 /**
- * Bulk-marks every current student in one batch year across one or more courses as alumni at
- * once, instead of the one-by-one "Mark as Alumni" button on each student's detail page. Options
- * and the live "N students" count are derived entirely from the non-alumni students already
- * loaded by the Alumni page — no extra round trip until the import itself.
+ * Marks a whole (institute, batch year, one or more courses) combination as graduated at once —
+ * every currently non-alumni student matching all three moves to alumni together, and the
+ * combination is remembered so a student who only imports for the first time later is created as
+ * alumni immediately too. There is no per-student "Mark as Alumni" control anywhere in the portal
+ * — a batch always graduates as a whole, never one student in isolation. Options and the live
+ * "N students" count are derived entirely from the non-alumni students already loaded by the
+ * Alumni page — no extra round trip until submission.
  */
-function ImportAlumniDialog({
+function GraduateBatchDialog({
   students,
   onClose,
-  onImported,
+  onGraduated,
 }: {
   students: StudentProfile[];
   onClose: () => void;
-  onImported: () => void;
+  onGraduated: () => void;
 }) {
   const { toast } = useToast();
   const [instituteCode, setInstituteCode] = useState(ALL);
   const [batchYear, setBatchYear] = useState(ALL);
   const [programCodes, setProgramCodes] = useState<string[]>([]);
-  const [importing, setImporting] = useState(false);
+  const [graduating, setGraduating] = useState(false);
 
   const instituteOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -455,13 +458,18 @@ function ImportAlumniDialog({
     return [...map.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
   }, [students]);
 
+  // Narrowed by the chosen institute, same cascade as the page's own filters — institute is
+  // required here (unlike the page's own filters), so a batch always graduates at one specific
+  // institute, never "every institute at once".
   const batchOptions = useMemo(() => {
     const years = new Set<number>();
-    for (const s of students) if (s.batchYear != null) years.add(s.batchYear);
+    for (const s of students) {
+      if (instituteCode && s.instituteCode !== instituteCode) continue;
+      if (s.batchYear != null) years.add(s.batchYear);
+    }
     return [...years].sort((a, b) => b - a);
-  }, [students]);
+  }, [students, instituteCode]);
 
-  // Narrowed by the chosen institute, same cascade as the page's own filters.
   const programOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const s of students) {
@@ -472,46 +480,46 @@ function ImportAlumniDialog({
   }, [students, instituteCode]);
 
   const matching = useMemo(() => {
-    if (!batchYear || programCodes.length === 0) return [];
+    if (!instituteCode || !batchYear || programCodes.length === 0) return [];
     return students.filter((s) => {
+      if (s.instituteCode !== instituteCode) return false;
       if (String(s.batchYear ?? "") !== batchYear) return false;
       if (!s.programCode || !programCodes.includes(s.programCode)) return false;
-      if (instituteCode && s.instituteCode !== instituteCode) return false;
       return true;
     });
   }, [students, batchYear, programCodes, instituteCode]);
 
   const submit = async () => {
-    if (matching.length === 0) return;
-    setImporting(true);
+    if (!instituteCode || matching.length === 0) return;
+    setGraduating(true);
     try {
-      const result = await bulkImportAlumni(Number(batchYear), programCodes);
+      const result = await graduateBatch(Number(batchYear), instituteCode, programCodes);
       toast(`Marked ${result.studentsMarked} student${result.studentsMarked === 1 ? "" : "s"} as alumni`, "success");
-      onImported();
+      onGraduated();
       onClose();
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Failed to import alumni", "error");
+      toast(err instanceof Error ? err.message : "Failed to graduate batch", "error");
     } finally {
-      setImporting(false);
+      setGraduating(false);
     }
   };
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className="bg-surface rounded-2xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-[15px] font-bold text-primary mb-1">Import Alumni</h3>
+        <h3 className="text-[15px] font-bold text-primary mb-1">Graduate Batch</h3>
         <p className="text-[12.5px] text-muted mb-4">
-          Mark every current student in a batch and course as alumni at once.
+          Mark every current student at an institute, in a batch and course, as alumni at once.
         </p>
 
         <div className="space-y-4">
           <Filter label="Institute">
             <select
               value={instituteCode}
-              onChange={(e) => { setInstituteCode(e.target.value); setProgramCodes([]); }}
+              onChange={(e) => { setInstituteCode(e.target.value); setBatchYear(ALL); setProgramCodes([]); }}
               className={SELECT_CLASS}
             >
-              <option value={ALL}>All Institutes</option>
+              <option value={ALL}>Select an institute…</option>
               {instituteOptions.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
@@ -519,7 +527,12 @@ function ImportAlumniDialog({
           </Filter>
 
           <Filter label="Batch Year">
-            <select value={batchYear} onChange={(e) => setBatchYear(e.target.value)} className={SELECT_CLASS}>
+            <select
+              value={batchYear}
+              onChange={(e) => setBatchYear(e.target.value)}
+              disabled={!instituteCode}
+              className={SELECT_CLASS}
+            >
               <option value={ALL}>Select a batch year…</option>
               {batchOptions.map((y) => (
                 <option key={y} value={String(y)}>{y}</option>
@@ -537,9 +550,9 @@ function ImportAlumniDialog({
         </div>
 
         <div className="mt-5 p-3 rounded-lg bg-teal-faint text-[12.5px] text-teal font-semibold">
-          {batchYear && programCodes.length > 0
+          {instituteCode && batchYear && programCodes.length > 0
             ? `${matching.length} student${matching.length === 1 ? "" : "s"} will be marked as alumni.`
-            : "Pick a batch year and at least one course to see how many students this affects."}
+            : "Pick an institute, batch year, and at least one course to see how many students this affects."}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">
@@ -548,10 +561,10 @@ function ImportAlumniDialog({
           </button>
           <button
             onClick={submit}
-            disabled={importing || matching.length === 0}
+            disabled={graduating || matching.length === 0}
             className="px-4 py-2 rounded-lg bg-teal text-white text-[13px] font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
           >
-            {importing ? "Importing…" : `Import ${matching.length || ""} Student${matching.length === 1 ? "" : "s"}`}
+            {graduating ? "Graduating…" : `Graduate ${matching.length || ""} Student${matching.length === 1 ? "" : "s"}`}
           </button>
         </div>
       </div>
