@@ -21,10 +21,11 @@ const TH = "px-4 py-2 text-left text-[11px] font-bold text-primary uppercase tra
 
 /**
  * The same paper code can mean two different subjects across a scheme revision (ARD203 is
- * "Introduction to AI" pre-NEP and "Analysis and Design of Algorithm" under NEP 2026-27) — this
- * is where an admin names the scheme eras and the per-programme/per-era overrides that resolve
- * that collision, instead of one silently overwriting the other. Collapsed by default: most
- * admins never touch this, it only matters when the university actually revises a scheme.
+ * "Introduction to AI" pre-NEP and "Analysis and Design of Algorithm" under NEP 2026-27) — or
+ * across institutes, once an affiliated college's own scheme diverges from USAR's. This is where
+ * an admin names the scheme eras and the per-institute/per-programme/per-era overrides that
+ * resolve that collision, instead of one silently overwriting the other. Collapsed by default:
+ * most admins never touch this, it only matters when the university actually revises a scheme.
  */
 export default function SchemeErasSection({ onChanged }: { onChanged: () => void }) {
   const { toast } = useToast();
@@ -244,19 +245,24 @@ function AddOverrideForm({
 }) {
   const { toast } = useToast();
   const [paperCode, setPaperCode] = useState("");
+  const [instituteCode, setInstituteCode] = useState("");
   const [programCode, setProgramCode] = useState("");
   const [schemeEraId, setSchemeEraId] = useState("");
   const [credits, setCredits] = useState("");
   const [subjectName, setSubjectName] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const canSave = paperCode.trim() !== "" && credits.trim() !== "" && (programCode.trim() !== "" || schemeEraId !== "");
+  const canSave =
+    paperCode.trim() !== "" &&
+    credits.trim() !== "" &&
+    (instituteCode.trim() !== "" || programCode.trim() !== "" || schemeEraId !== "");
 
   const submit = async () => {
     setSaving(true);
     try {
       await saveCreditOverride(null, {
         paperCode: paperCode.trim().toUpperCase(),
+        instituteCode: instituteCode.trim() || null,
         programCode: programCode.trim() || null,
         schemeEraId: schemeEraId || null,
         credits: Number(credits),
@@ -276,6 +282,9 @@ function AddOverrideForm({
     <div className="px-6 py-3 border-b border-border bg-background flex items-end gap-3 flex-wrap">
       <Field label="Paper code">
         <input value={paperCode} onChange={(e) => setPaperCode(e.target.value)} placeholder="ARD203" className={`${INPUT} font-mono w-32`} />
+      </Field>
+      <Field label="Institute" hint="Blank = any">
+        <input value={instituteCode} onChange={(e) => setInstituteCode(e.target.value)} placeholder="190" className={`${INPUT} w-24`} />
       </Field>
       <Field label="Programme" hint="Blank = any">
         <input value={programCode} onChange={(e) => setProgramCode(e.target.value)} placeholder="519" className={`${INPUT} w-24`} />
@@ -305,7 +314,7 @@ function AddOverrideForm({
         <button onClick={onCancel} className="text-[12px] font-semibold text-muted hover:text-foreground">Cancel</button>
       </div>
       {!canSave && paperCode.trim() !== "" && credits.trim() !== "" && (
-        <p className="w-full text-[11px] text-muted">Needs a programme, an era, or both — otherwise edit the paper&apos;s credit rule directly instead.</p>
+        <p className="w-full text-[11px] text-muted">Needs an institute, a programme, an era, or some combination — otherwise edit the paper&apos;s credit rule directly instead.</p>
       )}
     </div>
   );
@@ -343,6 +352,7 @@ function OverridesTable({
         <thead>
           <tr className="bg-primary-faint">
             <th className={TH}>Paper</th>
+            <th className={TH}>Institute</th>
             <th className={TH}>Programme</th>
             <th className={TH}>Era</th>
             <th className={TH}>Credits</th>
@@ -354,6 +364,7 @@ function OverridesTable({
           {overrides.map((override) => (
             <tr key={override.id} className="hover:bg-background transition-colors border-b border-border last:border-b-0">
               <td className="px-4 py-2.5 font-mono text-[13px]">{override.paperCode}</td>
+              <td className="px-4 py-2.5 text-muted">{override.instituteCode ?? "Any"}</td>
               <td className="px-4 py-2.5 text-muted">{override.programCode ?? "Any"}</td>
               <td className="px-4 py-2.5 text-muted">{eraLabel(override.schemeEraId)}</td>
               <td className="px-4 py-2.5 tabular-nums font-semibold">{override.credits}</td>

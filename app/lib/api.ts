@@ -917,13 +917,15 @@ export interface SchemeEra {
 
 export type SchemeEraUpsert = Omit<SchemeEra, "id">;
 
-/** Overrides a paper code's base credit_rules value for one programme and/or one scheme era —
- *  what makes the same code able to mean two different subjects across a scheme revision.
- *  `programCode`/`schemeEraId` null means "any programme"/"any era", but at least one must be
- *  set: an override scoping neither is just a credit_rules edit. */
+/** Overrides a paper code's base credit_rules value for one institute and/or one programme
+ *  and/or one scheme era — what makes the same code able to mean two different subjects across
+ *  a scheme revision, or across institutes. `instituteCode`/`programCode`/`schemeEraId` null
+ *  means "any institute"/"any programme"/"any era", but at least one must be set: an override
+ *  scoping none of them is just a credit_rules edit. */
 export interface ScopedCreditRule {
   id: string;
   paperCode: string;
+  instituteCode: string | null;
   programCode: string | null;
   schemeEraId: string | null;
   credits: number;
