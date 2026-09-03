@@ -168,8 +168,11 @@ export default function FeeStructuresManager({ institutes, courses }: FeeStructu
                     onClick={() => setEditing(s)}
                     className="hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer"
                   >
-                    <td className="px-4 py-3">{s.instituteName || instituteLabel(s.instituteCode)}</td>
-                    <td className="px-4 py-3">{s.programName || programLabel(s.programCode)}</td>
+                    {/* Short names (instituteLabel/programLabel already prefer shortName - see
+                        instituteOptionsFrom/programOptionsFrom) over the structure's own full
+                        instituteName/programName, so the list stays scannable. */}
+                    <td className="px-4 py-3">{instituteLabel(s.instituteCode)}</td>
+                    <td className="px-4 py-3">{programLabel(s.programCode)}</td>
                     <td className="px-4 py-3 tabular-nums">{s.admissionYear}</td>
                     <td className="px-4 py-3">{s.label}</td>
                     <td className="px-4 py-3 text-muted">{s.items.length}</td>
