@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, FormEvent } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, FormEvent } from "react";
 import {
   MessageSquareText,
   Plus,
@@ -32,6 +32,9 @@ import {
   fetchFeedbackAnalyticsCsv,
   fetchInstitutes,
   fetchCourses,
+  fetchTeachers,
+  createTeacher,
+  searchSubjectCatalog,
   TeachingOfferingDto,
   FeedbackWindowDto,
   FeedbackQuestionDto,
@@ -40,8 +43,10 @@ import {
   FeedbackSubjectType,
   Institute,
   Course,
+  TeacherDto,
 } from "../lib/api";
 import { instituteOptionsFrom, programOptionsFrom, BATCH_YEAR_OPTIONS } from "../lib/noticeTaxonomy";
+import Combobox, { ComboboxOption } from "../components/Combobox";
 
 type Tab = "offerings" | "windows" | "analytics" | "questions";
 
@@ -61,6 +66,7 @@ export default function FeedbackPage() {
   const [loading, setLoading] = useState(true);
   const [institutes, setInstitutes] = useState<Institute[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [teachers, setTeachers] = useState<TeacherDto[]>([]);
   const [offerings, setOfferings] = useState<TeachingOfferingDto[]>([]);
   const [windows, setWindows] = useState<FeedbackWindowDto[]>([]);
   const [analytics, setAnalytics] = useState<FeedbackAnalyticsDto>({ offerings: [] });
@@ -75,15 +81,17 @@ export default function FeedbackPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [institutesData, coursesData, offeringsData, windowsData, analyticsData] = await Promise.all([
+      const [institutesData, coursesData, teachersData, offeringsData, windowsData, analyticsData] = await Promise.all([
         fetchInstitutes(),
         fetchCourses(),
+        fetchTeachers(),
         fetchFeedbackOfferings(),
         fetchFeedbackWindows(),
         fetchFeedbackAnalytics(),
       ]);
       setInstitutes(institutesData);
       setCourses(coursesData);
+      setTeachers(teachersData);
       setOfferings(offeringsData);
       setWindows(windowsData);
       setAnalytics(analyticsData);
@@ -162,6 +170,7 @@ export default function FeedbackPage() {
           offerings={offerings}
           institutes={institutes}
           courses={courses}
+          teachers={teachers}
           lockedInstituteCodes={lockedInstituteCodes}
           loading={loading}
           onChanged={load}
@@ -192,6 +201,7 @@ function OfferingsSection({
   offerings,
   institutes,
   courses,
+  teachers,
   lockedInstituteCodes,
   loading,
   onChanged,
@@ -199,6 +209,7 @@ function OfferingsSection({
   offerings: TeachingOfferingDto[];
   institutes: Institute[];
   courses: Course[];
+  teachers: TeacherDto[];
   lockedInstituteCodes: string[] | null;
   loading: boolean;
   onChanged: () => void;
@@ -257,7 +268,7 @@ function OfferingsSection({
                     <div className="font-semibold text-foreground">{o.subjectName}</div>
                     <div className="text-[12px] text-muted">{o.subjectCode} · {o.subjectType === "THEORY" ? "Theory" : "Practical"}{o.isElective ? " · Elective" : ""}</div>
                   </td>
-                  <td className="px-4 py-3">{o.facultyName}</td>
+                  <td className="px-4 py-3">{o.teacherName}</td>
                   <td className="px-4 py-3 text-[12px] text-muted">{instituteLabel(o.instituteCode)} / {programLabel(o.programCode)}</td>
                   <td className="px-4 py-3">{o.batchYear}{o.semesterNumber ? ` · Sem ${o.semesterNumber}` : ""}</td>
                   <td className="px-4 py-3">{o.academicTerm}</td>
@@ -280,8 +291,10 @@ function OfferingsSection({
           <OfferingForm
             institutes={institutes}
             courses={courses}
+            teachers={teachers}
             lockedInstituteCodes={lockedInstituteCodes}
             onSaved={() => { setShowForm(false); onChanged(); }}
+            onTeacherAdded={onChanged}
           />
         </DetailDialog>
       )}
@@ -294,23 +307,40 @@ function OfferingsSection({
             <DetailField label="Batch Year" value={selected.batchYear} />
             <DetailField label="Academic Term" value={selected.academicTerm} />
           </div>
-          <OfferingEditForm offering={selected} onSaved={(updated) => { setSelected(updated); onChanged(); }} />
+          <OfferingEditForm
+            offering={selected}
+            teachers={teachers.filter((t) => t.instituteCode === selected.instituteCode)}
+            onSaved={(updated) => { setSelected(updated); onChanged(); }}
+            onTeacherAdded={onChanged}
+          />
         </DetailDialog>
       )}
     </div>
   );
 }
 
+function teacherOptionsFrom(teachers: TeacherDto[]): ComboboxOption[] {
+  return teachers.map((t) => ({
+    value: t.id,
+    label: t.title ? `${t.title} ${t.name}` : t.name,
+    sublabel: t.facultyCode ?? undefined,
+  }));
+}
+
 function OfferingForm({
   institutes,
   courses,
+  teachers,
   lockedInstituteCodes,
   onSaved,
+  onTeacherAdded,
 }: {
   institutes: Institute[];
   courses: Course[];
+  teachers: TeacherDto[];
   lockedInstituteCodes: string[] | null;
   onSaved: () => void;
+  onTeacherAdded: () => void;
 }) {
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
@@ -325,10 +355,23 @@ function OfferingForm({
     [courses, instituteCode]
   );
   const [programCode, setProgramCode] = useState("");
+
+  const [manualSubject, setManualSubject] = useState(false);
   const [subjectCode, setSubjectCode] = useState("");
   const [subjectName, setSubjectName] = useState("");
   const [subjectType, setSubjectType] = useState<FeedbackSubjectType>("THEORY");
-  const [facultyName, setFacultyName] = useState("");
+  // Populated on every catalog search so picking a result can also prefill its known subject
+  // type — free-text entry has no such source and leaves the manual selector as the only input.
+  const subjectTypeByCode = useRef<Record<string, FeedbackSubjectType>>({});
+
+  const [teacherId, setTeacherId] = useState("");
+  const [teacherLabel, setTeacherLabel] = useState("");
+  const [showAddTeacher, setShowAddTeacher] = useState(false);
+  const teacherOptions = useMemo(
+    () => teacherOptionsFrom(teachers.filter((t) => t.active && t.instituteCode === instituteCode)),
+    [teachers, instituteCode]
+  );
+
   const [batchYear, setBatchYear] = useState(String(BATCH_YEAR_OPTIONS[0]?.value ?? new Date().getFullYear()));
   const [semesterNumber, setSemesterNumber] = useState("");
   const [academicTerm, setAcademicTerm] = useState("");
@@ -338,9 +381,15 @@ function OfferingForm({
     setProgramCode((prev) => (programOptions.some((o) => o.value === prev) ? prev : programOptions[0]?.value ?? ""));
   }, [programOptions]);
 
+  // A teacher picked under a different institute no longer applies once the institute changes.
+  useEffect(() => {
+    setTeacherId("");
+    setTeacherLabel("");
+  }, [instituteCode]);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!instituteCode || !programCode || !subjectCode.trim() || !subjectName.trim() || !facultyName.trim() || !academicTerm.trim()) {
+    if (!instituteCode || !programCode || !subjectCode.trim() || !subjectName.trim() || !teacherId || !academicTerm.trim()) {
       toast("Please fill all required fields", "error");
       return;
     }
@@ -352,7 +401,7 @@ function OfferingForm({
         subjectCode: subjectCode.trim(),
         subjectName: subjectName.trim(),
         subjectType,
-        facultyName: facultyName.trim(),
+        teacherId,
         batchYear: Number(batchYear),
         semesterNumber: semesterNumber ? Number(semesterNumber) : null,
         academicTerm: academicTerm.trim(),
@@ -380,21 +429,69 @@ function OfferingForm({
           {programOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </Field>
-      <Field label="Subject Code *">
-        <input value={subjectCode} onChange={(e) => setSubjectCode(e.target.value)} placeholder="e.g. CO301" className={inputClass} />
-      </Field>
-      <Field label="Subject Name *">
-        <input value={subjectName} onChange={(e) => setSubjectName(e.target.value)} placeholder="e.g. Data Structures" className={inputClass} />
-      </Field>
+
+      {manualSubject ? (
+        <>
+          <Field label="Subject Code *">
+            <input value={subjectCode} onChange={(e) => setSubjectCode(e.target.value)} placeholder="e.g. CO301" className={inputClass} />
+          </Field>
+          <Field label="Subject Name *">
+            <input value={subjectName} onChange={(e) => setSubjectName(e.target.value)} placeholder="e.g. Data Structures" className={inputClass} />
+          </Field>
+        </>
+      ) : (
+        <div className="col-span-2 grid grid-cols-2 gap-4">
+          <Combobox
+            label="Subject *"
+            value={subjectCode}
+            displayValue={subjectName ? `${subjectName} (${subjectCode})` : subjectCode}
+            search={async (q) => {
+              const matches = await searchSubjectCatalog(q);
+              subjectTypeByCode.current = Object.fromEntries(matches.map((m) => [m.subjectCode, m.subjectType]));
+              return matches.map((m) => ({ value: m.subjectCode, label: m.subjectName, sublabel: m.subjectCode }));
+            }}
+            onSelect={(opt) => {
+              if (!opt) return;
+              setSubjectCode(opt.value);
+              setSubjectName(opt.label);
+              const knownType = subjectTypeByCode.current[opt.value];
+              if (knownType) setSubjectType(knownType);
+            }}
+            placeholder="Search subject code or name…"
+          />
+          <div className="flex items-end pb-1">
+            <button type="button" onClick={() => setManualSubject(true)} className="text-[12.5px] font-medium text-primary hover:underline">
+              Can&apos;t find it? Enter manually
+            </button>
+          </div>
+        </div>
+      )}
+
       <Field label="Subject Type *">
         <select value={subjectType} onChange={(e) => setSubjectType(e.target.value as FeedbackSubjectType)} className={selectClass}>
           <option value="THEORY">Theory</option>
           <option value="PRACTICAL">Practical</option>
         </select>
       </Field>
-      <Field label="Faculty Name *">
-        <input value={facultyName} onChange={(e) => setFacultyName(e.target.value)} placeholder="e.g. Dr. A. Sharma" className={inputClass} />
-      </Field>
+
+      <Combobox
+        label="Teacher *"
+        value={teacherId}
+        displayValue={teacherLabel}
+        search={(q) => {
+          const lower = q.toLowerCase();
+          return teacherOptions.filter((o) => o.label.toLowerCase().includes(lower) || (o.sublabel ?? "").toLowerCase().includes(lower));
+        }}
+        onSelect={(opt) => {
+          if (!opt) return;
+          setTeacherId(opt.value);
+          setTeacherLabel(opt.label);
+        }}
+        placeholder={instituteCode ? "Search teacher…" : "Pick an institute first"}
+        disabled={!instituteCode}
+        onCreateNew={{ label: "Add new teacher", onClick: () => setShowAddTeacher(true) }}
+      />
+
       <Field label="Batch Year *">
         <select value={batchYear} onChange={(e) => setBatchYear(e.target.value)} className={selectClass}>
           {BATCH_YEAR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -415,17 +512,99 @@ function OfferingForm({
           {submitting ? "Creating…" : "Create Offering"}
         </button>
       </div>
+
+      {showAddTeacher && (
+        <DetailDialog title="Add New Teacher" onClose={() => setShowAddTeacher(false)}>
+          <TeacherQuickAddForm
+            instituteCode={instituteCode}
+            onSaved={(teacher) => {
+              setShowAddTeacher(false);
+              setTeacherId(teacher.id);
+              setTeacherLabel(teacher.title ? `${teacher.title} ${teacher.name}` : teacher.name);
+              onTeacherAdded();
+            }}
+          />
+        </DetailDialog>
+      )}
     </form>
   );
 }
 
-function OfferingEditForm({ offering, onSaved }: { offering: TeachingOfferingDto; onSaved: (updated: TeachingOfferingDto) => void }) {
+function TeacherQuickAddForm({ instituteCode, onSaved }: { instituteCode: string; onSaved: (teacher: TeacherDto) => void }) {
+  const { toast } = useToast();
+  const [submitting, setSubmitting] = useState(false);
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("Dr.");
+  const [facultyCode, setFacultyCode] = useState("");
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !name.trim()) {
+      toast("Please enter at least an email and name", "error");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const teacher = await createTeacher({
+        email: email.trim(),
+        name: name.trim(),
+        title: title.trim() || null,
+        instituteCode,
+        facultyCode: facultyCode.trim() || null,
+      });
+      toast("Teacher added");
+      onSaved(teacher);
+    } catch (err) {
+      toast(`Failed to add teacher: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
+      <Field label="Email *" full>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="teacher@ipu.ac.in" className={inputClass} />
+      </Field>
+      <Field label="Title">
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Dr., Prof." className={inputClass} />
+      </Field>
+      <Field label="Name *">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ruchika Sehgal" className={inputClass} />
+      </Field>
+      <Field label="Faculty Code" full>
+        <input value={facultyCode} onChange={(e) => setFacultyCode(e.target.value)} placeholder="Optional" className={inputClass} />
+      </Field>
+      <div className="col-span-2 flex justify-end mt-2">
+        <button type="submit" disabled={submitting} className="px-5 py-2.5 rounded-[10px] text-[14px] font-semibold text-white bg-primary hover:bg-primary-light transition-colors disabled:opacity-60">
+          {submitting ? "Adding…" : "Add Teacher"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function OfferingEditForm({
+  offering,
+  teachers,
+  onSaved,
+  onTeacherAdded,
+}: {
+  offering: TeachingOfferingDto;
+  teachers: TeacherDto[];
+  onSaved: (updated: TeachingOfferingDto) => void;
+  onTeacherAdded: () => void;
+}) {
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [subjectCode, setSubjectCode] = useState(offering.subjectCode);
   const [subjectName, setSubjectName] = useState(offering.subjectName);
   const [subjectType, setSubjectType] = useState<FeedbackSubjectType>(offering.subjectType);
-  const [facultyName, setFacultyName] = useState(offering.facultyName);
+  const [teacherId, setTeacherId] = useState(offering.teacherId);
+  const [teacherLabel, setTeacherLabel] = useState(offering.teacherName);
+  const [showAddTeacher, setShowAddTeacher] = useState(false);
+  const teacherOptions = useMemo(() => teacherOptionsFrom(teachers.filter((t) => t.active)), [teachers]);
   const [semesterNumber, setSemesterNumber] = useState(offering.semesterNumber != null ? String(offering.semesterNumber) : "");
   const [isElective, setIsElective] = useState(!!offering.isElective);
   const [active, setActive] = useState(offering.active);
@@ -438,7 +617,7 @@ function OfferingEditForm({ offering, onSaved }: { offering: TeachingOfferingDto
         subjectCode: subjectCode.trim(),
         subjectName: subjectName.trim(),
         subjectType,
-        facultyName: facultyName.trim(),
+        teacherId,
         semesterNumber: semesterNumber ? Number(semesterNumber) : null,
         isElective,
         active,
@@ -462,7 +641,21 @@ function OfferingEditForm({ offering, onSaved }: { offering: TeachingOfferingDto
           <option value="PRACTICAL">Practical</option>
         </select>
       </Field>
-      <Field label="Faculty Name"><input value={facultyName} onChange={(e) => setFacultyName(e.target.value)} className={inputClass} /></Field>
+      <Combobox
+        label="Teacher"
+        value={teacherId}
+        displayValue={teacherLabel}
+        search={(q) => {
+          const lower = q.toLowerCase();
+          return teacherOptions.filter((o) => o.label.toLowerCase().includes(lower) || (o.sublabel ?? "").toLowerCase().includes(lower));
+        }}
+        onSelect={(opt) => {
+          if (!opt) return;
+          setTeacherId(opt.value);
+          setTeacherLabel(opt.label);
+        }}
+        onCreateNew={{ label: "Add new teacher", onClick: () => setShowAddTeacher(true) }}
+      />
       <Field label="Semester Number"><input type="number" min={1} max={12} value={semesterNumber} onChange={(e) => setSemesterNumber(e.target.value)} className={inputClass} /></Field>
       <div className="flex items-end gap-5 pb-1">
         <label className="flex items-center gap-2 text-[13px] text-foreground">
@@ -479,6 +672,20 @@ function OfferingEditForm({ offering, onSaved }: { offering: TeachingOfferingDto
           {submitting ? "Saving…" : "Save Changes"}
         </button>
       </div>
+
+      {showAddTeacher && (
+        <DetailDialog title="Add New Teacher" onClose={() => setShowAddTeacher(false)}>
+          <TeacherQuickAddForm
+            instituteCode={offering.instituteCode}
+            onSaved={(teacher) => {
+              setShowAddTeacher(false);
+              setTeacherId(teacher.id);
+              setTeacherLabel(teacher.title ? `${teacher.title} ${teacher.name}` : teacher.name);
+              onTeacherAdded();
+            }}
+          />
+        </DetailDialog>
+      )}
     </form>
   );
 }
@@ -730,7 +937,7 @@ function OfferingAnalyticsRow({ offering, expanded, onToggle }: { offering: Offe
       <button onClick={onToggle} className="w-full flex items-center gap-4 text-left">
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-foreground text-[13.5px] truncate">{offering.subjectName} <span className="text-muted font-normal">({offering.subjectCode})</span></div>
-          <div className="text-[12px] text-muted mt-0.5">{offering.facultyName} · {offering.academicTerm}</div>
+          <div className="text-[12px] text-muted mt-0.5">{offering.teacherName} · {offering.academicTerm}</div>
         </div>
         <div className="flex-1 max-w-[200px] bg-background rounded-full h-2.5 overflow-hidden">
           <div className="h-full bg-primary rounded-full" style={{ width: `${Math.max((offering.averageRating / max) * 100, offering.responseCount > 0 ? 4 : 0)}%` }} />

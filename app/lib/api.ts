@@ -1233,13 +1233,86 @@ export async function fetchPortalOutageAttempts(id: number): Promise<PortalOutag
 
 export type FeedbackSubjectType = "THEORY" | "PRACTICAL";
 
+/** A real, identity-bearing teacher account — not a free-text label. Authenticates through the
+ *  same student-facing auth flow; this is just the admin-curated catalog view of one. */
+export interface TeacherDto {
+  id: string;
+  facultyCode: string | null;
+  name: string;
+  title: string | null;
+  instituteCode: string | null;
+  active: boolean;
+}
+
+/** Creates the User row up front by email if none exists yet — this is how a teacher who hasn't
+ *  logged in gets pre-registered, the same way a Student row can exist before its owner signs in. */
+export interface CreateTeacherRequest {
+  email: string;
+  name: string;
+  title: string | null;
+  instituteCode: string;
+  facultyCode: string | null;
+}
+
+export interface UpdateTeacherRequest {
+  name: string;
+  title: string | null;
+  active: boolean;
+}
+
+export async function fetchTeachers(): Promise<TeacherDto[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/teachers`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch teachers: ${res.status}`));
+  return res.json();
+}
+
+export async function createTeacher(request: CreateTeacherRequest): Promise<TeacherDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/teachers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to add teacher: ${res.status}`));
+  return res.json();
+}
+
+export async function updateTeacher(id: string, request: UpdateTeacherRequest): Promise<TeacherDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/teachers/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update teacher: ${res.status}`));
+  return res.json();
+}
+
+/** A self-growing, university-wide catalog — creating an offering with an unseen subject code
+ *  adds it here automatically, so coverage improves over time with no separate curation step. */
+export interface SubjectCatalogEntryDto {
+  id: string;
+  subjectCode: string;
+  subjectName: string;
+  subjectType: FeedbackSubjectType;
+  programCode: string | null;
+}
+
+/** Blank/omitted `search` returns the first page of the catalog rather than everything —
+ *  capped at 30 matches server-side either way. */
+export async function searchSubjectCatalog(search?: string): Promise<SubjectCatalogEntryDto[]> {
+  const qs = search ? `?search=${encodeURIComponent(search)}` : "";
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/subjects${qs}`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to search subjects: ${res.status}`));
+  return res.json();
+}
+
 /** Flat admin-facing shape — institute/program as codes, not linked entities. */
 export interface TeachingOfferingDto {
   id: string;
   subjectCode: string;
   subjectName: string;
   subjectType: FeedbackSubjectType;
-  facultyName: string;
+  teacherId: string;
+  teacherName: string;
   instituteCode: string;
   programCode: string;
   batchYear: number;
@@ -1255,7 +1328,7 @@ export interface CreateTeachingOfferingRequest {
   subjectCode: string;
   subjectName: string;
   subjectType: FeedbackSubjectType;
-  facultyName: string;
+  teacherId: string;
   batchYear: number;
   semesterNumber: number | null;
   academicTerm: string;
@@ -1267,7 +1340,7 @@ export interface UpdateTeachingOfferingRequest {
   subjectCode: string;
   subjectName: string;
   subjectType: FeedbackSubjectType;
-  facultyName: string;
+  teacherId: string;
   semesterNumber: number | null;
   isElective: boolean;
   active: boolean;
@@ -1323,7 +1396,7 @@ export interface OfferingAnalyticsDto {
   offeringId: string;
   subjectCode: string;
   subjectName: string;
-  facultyName: string;
+  teacherName: string;
   academicTerm: string;
   averageRating: number;
   responseCount: number;
