@@ -14,6 +14,7 @@ import {
   ToggleLeft,
   LifeBuoy,
   ActivitySquare,
+  MessageSquareText,
   type LucideIcon,
 } from "lucide-react";
 import type { AdminSession, StudentFeature } from "./api";
@@ -44,6 +45,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/alumni", label: "Alumni", icon: GraduationCap },
   { href: "/documents", label: "Documents", icon: FileCheck2, feature: "DOCUMENTS" },
   { href: "/fees", label: "Fee Payments", icon: Receipt, feature: "FEES" },
+  // No superOnly — an institute admin manages their own institute's offerings/windows; the
+  // question-bank write UI inside the page itself is gated to super admins only.
+  { href: "/feedback", label: "Faculty Feedback", icon: MessageSquareText, feature: "FEEDBACK" },
   // Not institute-scoped (see SupportTicketService's Javadoc) — every admin sees the whole
   // queue, same as a super admin would.
   { href: "/support-tickets", label: "Support Tickets", icon: LifeBuoy },

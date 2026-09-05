@@ -1224,3 +1224,218 @@ export async function fetchPortalOutageAttempts(id: number): Promise<PortalOutag
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch affected users: ${res.status}`));
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Feedback — per-subject/faculty ratings, collected anonymously each academic term.
+// Offerings/windows are narrowed server-side to the caller's own institute(s) via AdminScope;
+// question-bank writes are SUPER_ADMIN only (reads are open to every admin).
+// ---------------------------------------------------------------------------
+
+export type FeedbackSubjectType = "THEORY" | "PRACTICAL";
+
+/** Flat admin-facing shape — institute/program as codes, not linked entities. */
+export interface TeachingOfferingDto {
+  id: string;
+  subjectCode: string;
+  subjectName: string;
+  subjectType: FeedbackSubjectType;
+  facultyName: string;
+  instituteCode: string;
+  programCode: string;
+  batchYear: number;
+  semesterNumber: number | null;
+  academicTerm: string;
+  isElective: boolean | null;
+  active: boolean;
+}
+
+export interface CreateTeachingOfferingRequest {
+  instituteCode: string;
+  programCode: string;
+  subjectCode: string;
+  subjectName: string;
+  subjectType: FeedbackSubjectType;
+  facultyName: string;
+  batchYear: number;
+  semesterNumber: number | null;
+  academicTerm: string;
+  isElective: boolean;
+}
+
+/** Institute/program/batchYear/academicTerm are fixed at creation and not sent here. */
+export interface UpdateTeachingOfferingRequest {
+  subjectCode: string;
+  subjectName: string;
+  subjectType: FeedbackSubjectType;
+  facultyName: string;
+  semesterNumber: number | null;
+  isElective: boolean;
+  active: boolean;
+}
+
+export interface FeedbackWindowDto {
+  id: string;
+  instituteCode: string;
+  academicTerm: string;
+  opensAt: string;
+  closesAt: string;
+  resultsVisibleToAdmin: boolean;
+}
+
+/** PUT upserts by (instituteCode, academicTerm) — the same call creates or updates. */
+export interface UpsertFeedbackWindowRequest {
+  instituteCode: string;
+  academicTerm: string;
+  opensAt: string;
+  closesAt: string;
+  resultsVisibleToAdmin: boolean;
+}
+
+export interface FeedbackQuestionDto {
+  id: string;
+  questionText: string;
+  subjectType: FeedbackSubjectType;
+  displayOrder: number;
+  active: boolean;
+}
+
+export interface CreateFeedbackQuestionRequest {
+  questionText: string;
+  subjectType: FeedbackSubjectType;
+  displayOrder: number;
+}
+
+export interface UpdateFeedbackQuestionRequest {
+  questionText: string;
+  displayOrder: number;
+  active: boolean;
+}
+
+export interface QuestionAnalyticsDto {
+  questionId: string;
+  questionText: string;
+  averageRating: number;
+  /** Star (1-5, as object string keys) -> response count; a missing key means zero. */
+  histogram: Record<string, number>;
+}
+
+export interface OfferingAnalyticsDto {
+  offeringId: string;
+  subjectCode: string;
+  subjectName: string;
+  facultyName: string;
+  academicTerm: string;
+  averageRating: number;
+  responseCount: number;
+  eligibleStudentCount: number;
+  submissionCount: number;
+  /** submissionCount / eligibleStudentCount, as a 0-1 fraction. */
+  participationRate: number;
+  questionBreakdown: QuestionAnalyticsDto[];
+}
+
+export interface FeedbackAnalyticsDto {
+  offerings: OfferingAnalyticsDto[];
+}
+
+export async function fetchFeedbackOfferings(academicTerm?: string): Promise<TeachingOfferingDto[]> {
+  const qs = academicTerm ? `?academicTerm=${encodeURIComponent(academicTerm)}` : "";
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/offerings${qs}`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch offerings: ${res.status}`));
+  return res.json();
+}
+
+export async function createFeedbackOffering(request: CreateTeachingOfferingRequest): Promise<TeachingOfferingDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/offerings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to create offering: ${res.status}`));
+  return res.json();
+}
+
+export async function updateFeedbackOffering(
+  id: string,
+  request: UpdateTeachingOfferingRequest
+): Promise<TeachingOfferingDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/offerings/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update offering: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchFeedbackWindows(): Promise<FeedbackWindowDto[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/windows`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch feedback windows: ${res.status}`));
+  return res.json();
+}
+
+export async function upsertFeedbackWindow(request: UpsertFeedbackWindowRequest): Promise<FeedbackWindowDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/windows`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to save feedback window: ${res.status}`));
+  return res.json();
+}
+
+/** Any admin may read the question bank; only a super admin may write to it. */
+export async function fetchFeedbackQuestions(): Promise<FeedbackQuestionDto[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/questions`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch questions: ${res.status}`));
+  return res.json();
+}
+
+export async function createFeedbackQuestion(request: CreateFeedbackQuestionRequest): Promise<FeedbackQuestionDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to create question: ${res.status}`));
+  return res.json();
+}
+
+export async function updateFeedbackQuestion(
+  id: string,
+  request: UpdateFeedbackQuestionRequest
+): Promise<FeedbackQuestionDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/questions/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update question: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchFeedbackAnalytics(academicTerm?: string, programCode?: string): Promise<FeedbackAnalyticsDto> {
+  const params = new URLSearchParams();
+  if (academicTerm) params.set("academicTerm", academicTerm);
+  if (programCode) params.set("programCode", programCode);
+  const qs = params.toString();
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/analytics${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch analytics: ${res.status}`));
+  return res.json();
+}
+
+/**
+ * Downloads the analytics CSV as a blob rather than a plain `<a href>` — that route lives under
+ * `/api/admin/**` and needs the bearer token, which a browser won't attach to a URL it resolves
+ * itself (see `fetchFileObjectUrl`). The caller wraps the blob in an object URL and drives a
+ * temporary `<a download>` to trigger the save.
+ */
+export async function fetchFeedbackAnalyticsCsv(academicTerm?: string, programCode?: string): Promise<Blob> {
+  const params = new URLSearchParams();
+  if (academicTerm) params.set("academicTerm", academicTerm);
+  if (programCode) params.set("programCode", programCode);
+  const qs = params.toString();
+  const res = await apiFetch(`${API_BASE}/api/admin/feedback/analytics/export${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to export analytics: ${res.status}`));
+  return res.blob();
+}
