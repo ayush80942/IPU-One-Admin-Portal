@@ -236,7 +236,11 @@ function FeeStructureFormDialog({
   const editingExisting = structure != null;
 
   const [instituteCode, setInstituteCode] = useState(structure?.instituteCode ?? ALL);
-  const [programCode, setProgramCode] = useState(structure?.programCode ?? ALL);
+  // Editing an existing structure keeps its single locked program (never changes, so no setter
+  // needed); adding new lets the admin check off any number of that institute's programs to
+  // create one identical structure per program in a single save.
+  const programCode = structure?.programCode ?? ALL;
+  const [selectedProgramCodes, setSelectedProgramCodes] = useState<string[]>([]);
   const [admissionYear, setAdmissionYear] = useState<number>(structure?.admissionYear ?? new Date().getFullYear());
   const [academicYear, setAcademicYear] = useState<number>(structure?.academicYear ?? currentAcademicYear());
   const [items, setItems] = useState<ItemDraft[]>(toDrafts(structure?.items ?? []));
@@ -248,6 +252,14 @@ function FeeStructureFormDialog({
     () => programOptionsFrom(courses, instituteCode ? [instituteCode] : []),
     [courses, instituteCode]
   );
+  // Short names (e.g. "USAR") over the raw portal names, matching the list row and the rest of
+  // the admin portal's institute/program pickers.
+  const instituteLabel = useMemo(() => labelLookup(instituteOptionsFrom(institutes)), [institutes]);
+  const programLabel = useMemo(() => labelLookup(programOptionsFrom(courses)), [courses]);
+
+  const allProgramsSelected = programOptions.length > 0 && selectedProgramCodes.length === programOptions.length;
+  const toggleProgram = (code: string, checked: boolean) =>
+    setSelectedProgramCodes((prev) => (checked ? [...prev, code] : prev.filter((c) => c !== code)));
 
   const total = items.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
 
@@ -263,20 +275,34 @@ function FeeStructureFormDialog({
     .map((it) => ({ label: it.label.trim(), amount: Number(it.amount) }))
     .filter((it) => it.label && it.amount > 0);
 
-  const canSave = instituteCode && programCode && admissionYear > 0 && academicYear > 0 && validItems.length === items.length && items.length > 0;
+  const itemsValid = validItems.length === items.length && items.length > 0;
+  const canSave = editingExisting
+    ? Boolean(instituteCode && programCode && admissionYear > 0 && academicYear > 0 && itemsValid)
+    : Boolean(instituteCode && selectedProgramCodes.length > 0 && admissionYear > 0 && academicYear > 0 && itemsValid);
 
   const submit = async () => {
     if (!canSave) return;
     setSaving(true);
     try {
-      await saveFeeStructure({
-        instituteCode,
-        programCode,
-        admissionYear,
-        academicYear,
-        items: validItems,
-      });
-      toast(editingExisting ? "Fee structure updated" : "Fee structure added", "success");
+      if (editingExisting) {
+        await saveFeeStructure({ instituteCode, programCode, admissionYear, academicYear, items: validItems });
+        toast("Fee structure updated", "success");
+      } else {
+        // One identical structure per checked program - a full-replace upsert per (institute,
+        // program, admissionYear, academicYear), so re-checking a program that already has one
+        // for this exact year/session just overwrites it rather than erroring or duplicating.
+        await Promise.all(
+          selectedProgramCodes.map((code) =>
+            saveFeeStructure({ instituteCode, programCode: code, admissionYear, academicYear, items: validItems })
+          )
+        );
+        toast(
+          selectedProgramCodes.length === 1
+            ? "Fee structure added"
+            : `Fee structure added for ${selectedProgramCodes.length} programs`,
+          "success"
+        );
+      }
       onSaved();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Failed to save fee structure", "error");
@@ -301,6 +327,9 @@ function FeeStructureFormDialog({
         </div>
         <p className="text-[12.5px] text-muted mb-4">
           The total is always the sum of the items below — there is no separate total to enter.
+          {!editingExisting && selectedProgramCodes.length > 1 && (
+            <> This breakup will be saved identically for all {selectedProgramCodes.length} selected programs.</>
+          )}
         </p>
 
         <div className="space-y-4 mb-5">
@@ -309,8 +338,8 @@ function FeeStructureFormDialog({
             // any of them here would silently create a second structure instead of editing this
             // one, so they're locked; delete and re-add instead if one was chosen by mistake.
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]">
-              <div><span className="text-muted">Institute:</span> <span className="font-semibold">{structure!.instituteName || structure!.instituteCode}</span></div>
-              <div><span className="text-muted">Program:</span> <span className="font-semibold">{structure!.programName || structure!.programCode}</span></div>
+              <div><span className="text-muted">Institute:</span> <span className="font-semibold">{instituteLabel(structure!.instituteCode)}</span></div>
+              <div><span className="text-muted">Program:</span> <span className="font-semibold">{programLabel(structure!.programCode)}</span></div>
               <div><span className="text-muted">Admission Year:</span> <span className="font-semibold">{structure!.admissionYear}</span></div>
               <div><span className="text-muted">Session:</span> <span className="font-semibold">{structure!.label}</span></div>
             </div>
@@ -319,7 +348,7 @@ function FeeStructureFormDialog({
               <Filter label="Institute">
                 <select
                   value={instituteCode}
-                  onChange={(e) => { setInstituteCode(e.target.value); setProgramCode(ALL); }}
+                  onChange={(e) => { setInstituteCode(e.target.value); setSelectedProgramCodes([]); }}
                   className={SELECT_CLASS}
                 >
                   <option value={ALL}>Select an institute…</option>
@@ -329,18 +358,36 @@ function FeeStructureFormDialog({
                 </select>
               </Filter>
 
-              <Filter label="Program">
-                <select
-                  value={programCode}
-                  onChange={(e) => setProgramCode(e.target.value)}
-                  disabled={!instituteCode}
-                  className={SELECT_CLASS}
-                >
-                  <option value={ALL}>Select a program…</option>
-                  {programOptions.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+              <Filter label={`Programs${selectedProgramCodes.length > 0 ? ` (${selectedProgramCodes.length} selected)` : ""}`}>
+                {!instituteCode ? (
+                  <p className="text-[12.5px] text-muted px-1 py-2">Select an institute first.</p>
+                ) : programOptions.length === 0 ? (
+                  <p className="text-[12.5px] text-muted px-1 py-2">This institute has no programs yet.</p>
+                ) : (
+                  <div className="border border-border rounded-lg bg-background max-h-40 overflow-y-auto">
+                    <label className="flex items-center gap-2 px-3 py-2 text-[13px] font-semibold border-b border-border cursor-pointer hover:bg-primary-faint">
+                      <input
+                        type="checkbox"
+                        checked={allProgramsSelected}
+                        onChange={(e) => setSelectedProgramCodes(e.target.checked ? programOptions.map((o) => o.value) : [])}
+                      />
+                      Select all programs in this institute
+                    </label>
+                    {programOptions.map((o) => (
+                      <label
+                        key={o.value}
+                        className="flex items-center gap-2 px-3 py-2 text-[13px] cursor-pointer hover:bg-primary-faint"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedProgramCodes.includes(o.value)}
+                          onChange={(e) => toggleProgram(o.value, e.target.checked)}
+                        />
+                        {o.label}
+                      </label>
+                    ))}
+                  </div>
+                )}
               </Filter>
 
               <div className="grid grid-cols-2 gap-4">
@@ -415,7 +462,11 @@ function FeeStructureFormDialog({
             disabled={saving || !canSave}
             className="px-4 py-2 rounded-lg bg-primary text-white text-[13px] font-bold hover:bg-primary-light transition-colors disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving
+              ? "Saving…"
+              : !editingExisting && selectedProgramCodes.length > 1
+                ? `Save for ${selectedProgramCodes.length} programs`
+                : "Save"}
           </button>
         </div>
       </div>
