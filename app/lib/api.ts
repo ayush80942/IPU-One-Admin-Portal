@@ -836,6 +836,47 @@ export async function deleteFeeStructure(id: number): Promise<void> {
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete fee structure: ${res.status}`));
 }
 
+// ===== Fee reminder pushes (Notifications tab) =====
+
+// A record of one "send a reminder push" action, not a per-recipient delivery log - see
+// FeeReminderLog's Javadoc on the backend. status mirrors FeeRosterFilters.status: a real
+// FeeStatus name, or "NOT_SUBMITTED"/"ALL".
+export interface FeeReminderLog {
+  id: number;
+  academicYear: number;
+  instituteCodes: string | null;
+  programCode: string | null;
+  batchYear: number | null;
+  status: string;
+  targetCount: number;
+  sentByEmail: string;
+  sentAt: string;
+}
+
+export interface FeeReminderRequest {
+  academicYear: number;
+  programCode?: string;
+  instituteCode?: string;
+  batchYear?: number;
+  status?: string;
+}
+
+export async function sendFeeReminder(request: FeeReminderRequest): Promise<FeeReminderLog> {
+  const res = await apiFetch(`${API_BASE}/api/admin/fees/reminders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to send fee reminder: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchFeeReminders(page = 0, size = 20): Promise<PageResponse<FeeReminderLog>> {
+  const res = await apiFetch(`${API_BASE}/api/admin/fees/reminders?page=${page}&size=${size}`);
+  if (!res.ok) throw new Error(`Failed to fetch fee reminders: ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Credits
 // ---------------------------------------------------------------------------
