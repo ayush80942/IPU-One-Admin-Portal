@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { ChevronDown, ChevronRight, GraduationCap, Landmark, Plus, X } from "lucide-react";
 import { useToast } from "../components/Toast";
+import { useIsSuperAdmin } from "../components/AuthGate";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
 import EmptyState from "../components/EmptyState";
@@ -84,6 +85,7 @@ export default function AcademicStructurePage() {
 
   const coursesMissingDuration = courses.filter((c) => c.totalSemesters == null).length;
   const institutesMissingShortName = institutes.filter((i) => !i.shortName).length;
+  const onboardedCount = institutes.filter((i) => i.onboarded).length;
 
   return (
     <div>
@@ -92,7 +94,7 @@ export default function AcademicStructurePage() {
         subtitle="Codes and names stay in sync automatically from imported results. Add a school or programme here only when it has to exist before its first student imports — everything else is curation: short names, and the semester count that decides a student's “Pass Out” status."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <StatTile
           value={loading ? "—" : institutes.length}
           label="Total Institutes"
@@ -102,6 +104,13 @@ export default function AcademicStructurePage() {
               ? `${institutesMissingShortName} without a short name`
               : undefined
           }
+        />
+        <StatTile
+          value={loading ? "—" : onboardedCount}
+          label="Onboarded"
+          icon={Landmark}
+          color="teal"
+          subLabel={!loading ? `of ${institutes.length} institutes` : undefined}
         />
         <StatTile
           value={loading ? "—" : courses.length}
@@ -335,8 +344,10 @@ function InstituteAccordionRow({
   onCourseCreated: (created: Course) => void;
 }) {
   const { toast } = useToast();
+  const isSuperAdmin = useIsSuperAdmin();
   const [shortName, setShortName] = useState(institute.shortName ?? "");
   const [saving, setSaving] = useState(false);
+  const [togglingOnboarded, setTogglingOnboarded] = useState(false);
 
   const dirty = shortName !== (institute.shortName ?? "");
 
@@ -352,6 +363,19 @@ function InstituteAccordionRow({
       toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleOnboarded = async (checked: boolean) => {
+    setTogglingOnboarded(true);
+    try {
+      const updated = await updateInstitute(institute.instituteCode, { onboarded: checked });
+      onSavedInstitute(updated);
+      toast(checked ? "Marked as onboarded" : "Marked as not onboarded", "success");
+    } catch (err) {
+      toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+    } finally {
+      setTogglingOnboarded(false);
     }
   };
 
@@ -374,6 +398,27 @@ function InstituteAccordionRow({
             {courses.length} course{courses.length === 1 ? "" : "s"}
           </span>
         </button>
+        {isSuperAdmin ? (
+          <label
+            className="flex items-center gap-1.5 text-[12px] font-semibold text-muted shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={institute.onboarded}
+              disabled={togglingOnboarded}
+              onChange={(e) => toggleOnboarded(e.target.checked)}
+              className="w-4 h-4 accent-primary disabled:opacity-40"
+            />
+            Onboarded
+          </label>
+        ) : (
+          institute.onboarded && (
+            <span className="text-[11px] font-bold text-teal-600 bg-teal-50 px-2 py-1 rounded-full shrink-0">
+              Onboarded
+            </span>
+          )
+        )}
         <input
           type="text"
           value={shortName}

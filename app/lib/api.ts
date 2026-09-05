@@ -255,12 +255,14 @@ export interface Institute {
   instituteCode: string;
   instituteName: string;
   shortName: string | null;
+  onboarded: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface InstituteUpdate {
   shortName?: string | null;
+  onboarded?: boolean;
 }
 
 /** Hand-entered school, for one that exists before any student has imported from it. */
