@@ -3,6 +3,7 @@ import {
   Megaphone,
   Users,
   UserCheck,
+  UserCog,
   GraduationCap,
   FileCheck2,
   Landmark,
@@ -52,6 +53,10 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/alumni", label: "Alumni", icon: GraduationCap },
   { href: "/documents", label: "Documents", icon: FileCheck2, feature: "DOCUMENTS" },
   { href: "/fees", label: "Fee Payments", icon: Receipt, feature: "FEES" },
+  // The admin-curated faculty catalog Faculty Feedback assigns teaching offerings against -
+  // institute-scoped like Students, not gated behind the FEEDBACK flag since the entity itself
+  // (see Teacher's Javadoc on the backend) is meant to outlive that one module.
+  { href: "/teachers", label: "Teachers", icon: UserCog },
   // Entirely a Student Cell's own module now - an institute admin manages their own institute's
   // offerings/windows/analytics and the university-wide question bank alike. A super admin has
   // no institute to run feedback for, so this is hidden from them rather than superOnly.
