@@ -29,6 +29,12 @@ export interface NavItem {
    *  have it switched on (see Feature Flags), same as the app hides the tab itself. A super
    *  admin always sees every page regardless, since they're the one who sets the flags. */
   feature?: StudentFeature;
+  /** The inverse of superOnly: a page that belongs entirely to a school's own Student Cell, with
+   *  no university-wide role for a super admin to play. Hidden from the super admin's sidebar
+   *  and blocked from direct navigation in the portal - the backend itself stays unrestricted
+   *  for a super admin, same as everywhere else, so this is a portal-presentation choice, not a
+   *  new security boundary. */
+  hideFromSuperAdmin?: boolean;
 }
 
 /**
@@ -39,15 +45,17 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/notices", label: "Notices", icon: Megaphone, feature: "NOTICES" },
   { href: "/students", label: "Students", icon: Users },
-  // No superOnly/feature flag — the institute admin doing in-person ID verification needs this
-  // most, and the backend already scopes the list to their own institutes.
-  { href: "/onboarding-requests", label: "Onboarding Requests", icon: UserCheck },
+  // The institute admin doing in-person ID verification needs this, and the backend already
+  // scopes the list to their own institutes - a super admin has no institute of their own to
+  // review requests for, so this is entirely a Student Cell's own page now.
+  { href: "/onboarding-requests", label: "Onboarding Requests", icon: UserCheck, hideFromSuperAdmin: true },
   { href: "/alumni", label: "Alumni", icon: GraduationCap },
   { href: "/documents", label: "Documents", icon: FileCheck2, feature: "DOCUMENTS" },
   { href: "/fees", label: "Fee Payments", icon: Receipt, feature: "FEES" },
-  // No superOnly — an institute admin manages their own institute's offerings/windows; the
-  // question-bank write UI inside the page itself is gated to super admins only.
-  { href: "/feedback", label: "Faculty Feedback", icon: MessageSquareText, feature: "FEEDBACK" },
+  // Entirely a Student Cell's own module now - an institute admin manages their own institute's
+  // offerings/windows/analytics and the university-wide question bank alike. A super admin has
+  // no institute to run feedback for, so this is hidden from them rather than superOnly.
+  { href: "/feedback", label: "Faculty Feedback", icon: MessageSquareText, feature: "FEEDBACK", hideFromSuperAdmin: true },
   // Not institute-scoped (see SupportTicketService's Javadoc) — every admin sees the whole
   // queue, same as a super admin would.
   { href: "/support-tickets", label: "Support Tickets", icon: LifeBuoy },
@@ -69,7 +77,7 @@ export const NAV_ITEMS: NavItem[] = [
 
 function isVisible(item: NavItem, session: AdminSession | null): boolean {
   const isSuper = session?.role === "SUPER_ADMIN";
-  if (isSuper) return true;
+  if (isSuper) return !item.hideFromSuperAdmin;
   if (item.superOnly) return false;
   if (item.feature && !session?.enabledFeatures?.includes(item.feature)) return false;
   return true;
@@ -85,7 +93,7 @@ export function navItemsFor(session: AdminSession | null): NavItem[] {
  * somewhere sensible; the backend refuses those endpoints regardless.
  */
 export function isRouteAllowed(pathname: string, session: AdminSession | null): boolean {
-  if (session?.role === "SUPER_ADMIN") return true;
   const item = NAV_ITEMS.find((i) => i.href === pathname || (i.href !== "/" && pathname.startsWith(`${i.href}/`)));
+  if (session?.role === "SUPER_ADMIN") return !item || !item.hideFromSuperAdmin;
   return !item || isVisible(item, session);
 }

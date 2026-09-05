@@ -179,7 +179,7 @@ export default function FeedbackPage() {
       {tab === "analytics" && (
         <AnalyticsSection courses={courses} analytics={analytics} loading={loading} onFilterChange={setAnalytics} />
       )}
-      {tab === "questions" && <QuestionsSection isSuper={isSuper} />}
+      {tab === "questions" && <QuestionsSection />}
     </div>
   );
 }
@@ -776,7 +776,7 @@ function OfferingAnalyticsRow({ offering, expanded, onToggle }: { offering: Offe
 // Question bank
 // ============================================================================
 
-function QuestionsSection({ isSuper }: { isSuper: boolean }) {
+function QuestionsSection() {
   const { toast } = useToast();
   const [questions, setQuestions] = useState<FeedbackQuestionDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -806,15 +806,13 @@ function QuestionsSection({ isSuper }: { isSuper: boolean }) {
           <h2 className="text-[15px] font-bold text-primary">Question Bank</h2>
           <p className="text-[12px] text-muted mt-0.5">Asked university-wide, split by Theory vs. Practical subjects.</p>
         </div>
-        {isSuper && (
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-[10px] text-[13.5px] font-semibold text-white bg-primary hover:bg-primary-light transition-colors"
-          >
-            <Plus className="w-4 h-4" strokeWidth={2.5} />
-            New Question
-          </button>
-        )}
+        <button
+          onClick={() => setShowForm(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-[10px] text-[13.5px] font-semibold text-white bg-primary hover:bg-primary-light transition-colors"
+        >
+          <Plus className="w-4 h-4" strokeWidth={2.5} />
+          New Question
+        </button>
       </div>
 
       {loading ? (
@@ -823,8 +821,8 @@ function QuestionsSection({ isSuper }: { isSuper: boolean }) {
         <EmptyState icon={HelpCircle} message="No questions configured yet." />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 divide-x divide-border">
-          <QuestionList title="Theory" questions={theoryQuestions} isSuper={isSuper} onEdit={setEditing} />
-          <QuestionList title="Practical" questions={practicalQuestions} isSuper={isSuper} onEdit={setEditing} />
+          <QuestionList title="Theory" questions={theoryQuestions} onEdit={setEditing} />
+          <QuestionList title="Practical" questions={practicalQuestions} onEdit={setEditing} />
         </div>
       )}
 
@@ -845,12 +843,10 @@ function QuestionsSection({ isSuper }: { isSuper: boolean }) {
 function QuestionList({
   title,
   questions,
-  isSuper,
   onEdit,
 }: {
   title: string;
   questions: FeedbackQuestionDto[];
-  isSuper: boolean;
   onEdit: (q: FeedbackQuestionDto) => void;
 }) {
   return (
@@ -863,8 +859,8 @@ function QuestionList({
           {questions.map((q) => (
             <li
               key={q.id}
-              onClick={() => isSuper && onEdit(q)}
-              className={`flex items-start justify-between gap-2 text-[13px] p-2 rounded-lg ${isSuper ? "cursor-pointer hover:bg-background" : ""} ${!q.active ? "opacity-50" : ""}`}
+              onClick={() => onEdit(q)}
+              className={`flex items-start justify-between gap-2 text-[13px] p-2 rounded-lg cursor-pointer hover:bg-background ${!q.active ? "opacity-50" : ""}`}
             >
               <span className="text-foreground">{q.displayOrder}. {q.questionText}</span>
               {!q.active && <Pill color="text-muted" colorFaint="bg-background">Inactive</Pill>}
