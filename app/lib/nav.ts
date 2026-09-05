@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Megaphone,
   Users,
+  UserCheck,
   GraduationCap,
   FileCheck2,
   Landmark,
@@ -37,6 +38,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/notices", label: "Notices", icon: Megaphone, feature: "NOTICES" },
   { href: "/students", label: "Students", icon: Users },
+  // No superOnly/feature flag — the institute admin doing in-person ID verification needs this
+  // most, and the backend already scopes the list to their own institutes.
+  { href: "/onboarding-requests", label: "Onboarding Requests", icon: UserCheck },
   { href: "/alumni", label: "Alumni", icon: GraduationCap },
   { href: "/documents", label: "Documents", icon: FileCheck2, feature: "DOCUMENTS" },
   { href: "/fees", label: "Fee Payments", icon: Receipt, feature: "FEES" },

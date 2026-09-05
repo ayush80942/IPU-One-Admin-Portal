@@ -467,6 +467,57 @@ export async function updateUnlinkedUserStatus(
   return res.json();
 }
 
+// ===== Manual onboarding requests =====
+export type OnboardingRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+/**
+ * A first-time student who couldn't get through the real GGSIPU result-portal login (wrong
+ * password, or the portal down) submitted enrollment number, name and a lateral-entry flag from
+ * the app instead. The backend fills in institute/program/admission-year/batch-year by decoding
+ * the enrollment number. There's no photo/ID upload here — verification happens in person: the
+ * student visits their own Student Cell with their college ID card, and this is that review.
+ * Already scoped server-side to the calling admin's institutes, same as the rest of the directory.
+ */
+export interface OnboardingRequest {
+  id: string;
+  enrollmentNo: string;
+  name: string;
+  loginEmail: string;
+  instituteCode: string;
+  instituteName: string;
+  programCode: string;
+  programName: string;
+  admissionYear: number;
+  batchYear: number;
+  lateralEntry: boolean;
+  status: OnboardingRequestStatus;
+  rejectionRemark: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
+}
+
+export async function fetchOnboardingRequests(status?: string): Promise<OnboardingRequest[]> {
+  const res = await apiFetch(
+    `${API_BASE}/api/admin/onboarding-requests${status ? `?status=${status}` : ""}`
+  );
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch onboarding requests: ${res.status}`));
+  return res.json();
+}
+
+export async function reviewOnboardingRequest(
+  id: string,
+  action: "APPROVE" | "REJECT",
+  remark?: string
+): Promise<OnboardingRequest> {
+  const res = await apiFetch(`${API_BASE}/api/admin/onboarding-requests/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(action === "REJECT" ? { action, remark } : { action }),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to review request: ${res.status}`));
+  return res.json();
+}
+
 // ===== Document types =====
 export interface DocumentResponse {
   id: number;
