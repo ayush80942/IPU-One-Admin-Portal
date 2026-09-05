@@ -485,8 +485,10 @@ export interface OnboardingRequest {
   loginEmail: string;
   instituteCode: string;
   instituteName: string;
+  instituteShortName: string | null;
   programCode: string;
   programName: string;
+  programShortName: string | null;
   admissionYear: number;
   batchYear: number;
   lateralEntry: boolean;

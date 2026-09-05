@@ -132,8 +132,8 @@ export default function OnboardingRequestsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-muted">{r.loginEmail}</td>
-                      <td className="px-4 py-3">{r.instituteName}</td>
-                      <td className="px-4 py-3">{r.programName}</td>
+                      <td className="px-4 py-3">{r.instituteShortName || r.instituteName}</td>
+                      <td className="px-4 py-3">{r.programShortName || r.programName}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{r.admissionYear} / {r.batchYear}</td>
                       <td className="px-4 py-3">
                         <Pill color={meta.color} colorFaint={meta.colorFaint}>{meta.label}</Pill>
