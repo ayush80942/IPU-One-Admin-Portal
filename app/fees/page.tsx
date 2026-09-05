@@ -10,6 +10,7 @@ import Pill from "../components/Pill";
 import Filter, { SELECT_CLASS } from "../components/Filter";
 import FeeSubmissionDialog from "../components/FeeSubmissionDialog";
 import FeeStructuresManager from "./FeeStructuresManager";
+import FeePaymentReviews from "./FeePaymentReviews";
 import {
   fetchFees,
   fetchFeeSummary,
@@ -34,7 +35,7 @@ const PAGE_SIZE = 20;
 export default function FeesPage() {
   const { toast } = useToast();
 
-  const [view, setView] = useState<"submissions" | "structures">("submissions");
+  const [view, setView] = useState<"submissions" | "reviews" | "structures">("submissions");
   const [academicYear, setAcademicYear] = useState(currentAcademicYear);
   const [instituteCode, setInstituteCode] = useState("");
   const [programCode, setProgramCode] = useState("");
@@ -131,7 +132,7 @@ export default function FeesPage() {
         subtitle="Verify annual fee payment proofs and track who still hasn't paid."
         action={
           <div className="inline-flex rounded-lg border border-border bg-background p-1">
-            {(["submissions", "structures"] as const).map((v) => (
+            {(["submissions", "reviews", "structures"] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
@@ -139,7 +140,7 @@ export default function FeesPage() {
                   view === v ? "bg-primary text-white" : "text-muted hover:text-foreground"
                 }`}
               >
-                {v === "submissions" ? "Submissions" : "Fee Structures"}
+                {v === "submissions" ? "Submissions" : v === "reviews" ? "Payment Reviews" : "Fee Structures"}
               </button>
             ))}
           </div>
@@ -148,6 +149,8 @@ export default function FeesPage() {
 
       {view === "structures" ? (
         <FeeStructuresManager institutes={institutes} courses={courses} />
+      ) : view === "reviews" ? (
+        <FeePaymentReviews courses={courses} />
       ) : (
         <>
       {/* Filters — each change resets the offset, since a page number is meaningless
