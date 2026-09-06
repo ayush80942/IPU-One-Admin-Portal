@@ -24,7 +24,7 @@ import StatTile from "../../components/StatTile";
 import Pill from "../../components/Pill";
 import EmptyState from "../../components/EmptyState";
 import SectionCard from "../../components/SectionCard";
-import SectionsPanel from "./SectionsPanel";
+import { BatchYearSelect, BatchYearSectionsPanel } from "./CourseSectionsDropdown";
 import { AuthedImage } from "../../components/AuthedFile";
 import { AdminForm, PasswordForm } from "../../components/AdminFormDialog";
 import {
@@ -39,6 +39,7 @@ import {
   fetchFeatureFlags,
   setFeatureFlag,
   fetchStudents,
+  fetchSections,
   STUDENT_FEATURES,
   FEATURE_LABEL,
   type Institute,
@@ -46,6 +47,7 @@ import {
   type AdminUser,
   type InstituteFeatureFlags,
   type StudentFeature,
+  type SectionDto,
 } from "../../lib/api";
 import { instituteOptionsFrom } from "../../lib/noticeTaxonomy";
 
@@ -65,6 +67,7 @@ export default function InstituteDetailPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [flags, setFlags] = useState<InstituteFeatureFlags[]>([]);
+  const [sections, setSections] = useState<SectionDto[]>([]);
   const [studentCount, setStudentCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -86,18 +89,20 @@ export default function InstituteDetailPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [institutesData, coursesData, adminsData, flagsData, studentsData] = await Promise.all([
+      const [institutesData, coursesData, adminsData, flagsData, studentsData, sectionsData] = await Promise.all([
         fetchInstitutes(),
         fetchCourses(),
         fetchAdmins(),
         fetchFeatureFlags(),
         fetchStudents(),
+        fetchSections(),
       ]);
       setInstitutes(institutesData);
       setCourses(coursesData);
       setAdmins(adminsData);
       setFlags(flagsData);
       setStudentCount(studentsData.filter((s) => s.instituteCode === instituteCode).length);
+      setSections(sectionsData.filter((s) => s.instituteCode === instituteCode));
 
       const found = institutesData.find((i) => i.instituteCode === instituteCode);
       setShortName(found?.shortName ?? "");
@@ -112,6 +117,15 @@ export default function InstituteDetailPage() {
   }, [instituteCode]);
 
   useEffect(() => { load(); }, [load]);
+
+  const refreshSections = useCallback(async () => {
+    try {
+      const all = await fetchSections();
+      setSections(all.filter((s) => s.instituteCode === instituteCode));
+    } catch (err) {
+      toast(`Failed to load sections: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+    }
+  }, [instituteCode, toast]);
 
   const institute = institutes.find((i) => i.instituteCode === instituteCode) ?? null;
 
@@ -372,16 +386,16 @@ export default function InstituteDetailPage() {
           ) : (
             <CoursesTable
               courses={instituteCourses}
+              instituteCode={instituteCode}
+              editMode={editingProfile}
+              sections={sections}
               onSaved={(updated) =>
                 setCourses((prev) => prev.map((c) => (c.programCode === updated.programCode ? updated : c)))
               }
+              onSectionsChanged={refreshSections}
             />
           )}
         </SectionCard>
-
-        {/* Class sections (roll-range based subdivisions, e.g. B1/B2) - per program and batch
-            year, since not every program/batch here has this further division. */}
-        <SectionsPanel institute={institute} courses={courses} />
 
         {/* Admins */}
         <SectionCard
@@ -684,10 +698,18 @@ function AddCourseForm({
 
 function CoursesTable({
   courses,
+  instituteCode,
+  editMode,
+  sections,
   onSaved,
+  onSectionsChanged,
 }: {
   courses: Course[];
+  instituteCode: string;
+  editMode: boolean;
+  sections: SectionDto[];
   onSaved: (updated: Course) => void;
+  onSectionsChanged: () => void;
 }) {
   return (
     <div className="overflow-x-auto -mx-6 -mb-6">
@@ -698,12 +720,20 @@ function CoursesTable({
             <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Program</th>
             <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Short Name</th>
             <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Total Semesters</th>
-            <th className="px-4 py-3 w-20" />
+            <th className="px-4 py-3 w-40" />
           </tr>
         </thead>
         <tbody>
           {courses.map((course) => (
-            <CourseRow key={course.programCode} course={course} onSaved={onSaved} />
+            <CourseRow
+              key={course.programCode}
+              course={course}
+              instituteCode={instituteCode}
+              editMode={editMode}
+              sections={sections}
+              onSaved={onSaved}
+              onSectionsChanged={onSectionsChanged}
+            />
           ))}
         </tbody>
       </table>
@@ -713,20 +743,29 @@ function CoursesTable({
 
 function CourseRow({
   course,
+  instituteCode,
+  editMode,
+  sections,
   onSaved,
+  onSectionsChanged,
 }: {
   course: Course;
+  instituteCode: string;
+  editMode: boolean;
+  sections: SectionDto[];
   onSaved: (updated: Course) => void;
+  onSectionsChanged: () => void;
 }) {
   const { toast } = useToast();
   const [shortName, setShortName] = useState(course.shortName ?? "");
   const [totalSemesters, setTotalSemesters] = useState(course.totalSemesters?.toString() ?? "");
   const [saving, setSaving] = useState(false);
+  const [selectedBatchYear, setSelectedBatchYear] = useState<number | null>(null);
   const isComplete = (c: Course) => Boolean(c.shortName) && c.totalSemesters != null;
-  // Locked once both fields are already filled in - same one-time-fact reasoning as the
-  // institute's own short name/onboarded flag. A partially-filled row (e.g. short name set but
-  // semesters still missing) stays open so there's nothing extra to click through to finish it.
-  const [editing, setEditing] = useState(!isComplete(course));
+  // Editable when the page-wide edit toggle (the institute header's single Pencil button) is on,
+  // or when this row is still incomplete - same one-time-fact reasoning as the institute's own
+  // short name/onboarded flag, now shared across every row instead of each having its own pencil.
+  const editable = editMode || !isComplete(course);
 
   const dirty =
     shortName !== (course.shortName ?? "") ||
@@ -740,7 +779,6 @@ function CourseRow({
         totalSemesters: totalSemesters.trim() === "" ? null : Number(totalSemesters),
       });
       onSaved(updated);
-      setEditing(!isComplete(updated));
       toast("Course updated", "success");
     } catch (err) {
       toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
@@ -752,69 +790,74 @@ function CourseRow({
   const cancel = () => {
     setShortName(course.shortName ?? "");
     setTotalSemesters(course.totalSemesters?.toString() ?? "");
-    setEditing(false);
   };
 
   return (
-    <tr className="hover:bg-background transition-colors border-b border-border last:border-b-0 bg-surface">
-      <td className="px-6 py-3 font-mono text-[13px]">{course.programCode}</td>
-      <td className="px-4 py-3 font-semibold">{course.programName}</td>
-      <td className="px-4 py-3">
-        {editing ? (
-          <input
-            type="text"
-            value={shortName}
-            onChange={(e) => setShortName(e.target.value)}
-            placeholder="e.g. B.Tech AI&DS"
-            className={`${INPUT} w-full`}
-          />
-        ) : (
-          course.shortName
-        )}
-      </td>
-      <td className="px-4 py-3">
-        {editing ? (
-          <input
-            type="number"
-            min={1}
-            value={totalSemesters}
-            onChange={(e) => setTotalSemesters(e.target.value)}
-            placeholder="—"
-            className={`${INPUT} w-20`}
-          />
-        ) : (
-          course.totalSemesters
-        )}
-      </td>
-      <td className="px-4 py-3">
-        {editing ? (
-          <div className="flex items-center gap-2">
-            {dirty && (
-              <button
-                onClick={save}
-                disabled={saving}
-                className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
+    <>
+      <tr className="hover:bg-background transition-colors border-b border-border last:border-b-0 bg-surface">
+        <td className="px-6 py-3 font-mono text-[13px]">{course.programCode}</td>
+        <td className="px-4 py-3 font-semibold">{course.programName}</td>
+        <td className="px-4 py-3">
+          {editable ? (
+            <input
+              type="text"
+              value={shortName}
+              onChange={(e) => setShortName(e.target.value)}
+              placeholder="e.g. B.Tech AI&DS"
+              className={`${INPUT} w-full`}
+            />
+          ) : (
+            course.shortName
+          )}
+        </td>
+        <td className="px-4 py-3">
+          {editable ? (
+            <input
+              type="number"
+              min={1}
+              value={totalSemesters}
+              onChange={(e) => setTotalSemesters(e.target.value)}
+              placeholder="—"
+              className={`${INPUT} w-20`}
+            />
+          ) : (
+            course.totalSemesters
+          )}
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex items-center justify-end gap-2">
+            {editable && dirty && (
+              <>
+                <button
+                  onClick={save}
+                  disabled={saving}
+                  className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+                <button onClick={cancel} className="text-[12px] font-semibold text-muted hover:text-foreground">
+                  Cancel
+                </button>
+              </>
             )}
-            {isComplete(course) && (
-              <button onClick={cancel} className="text-[12px] font-semibold text-muted hover:text-foreground">
-                Cancel
-              </button>
-            )}
+            <BatchYearSelect course={course} sections={sections} value={selectedBatchYear} onChange={setSelectedBatchYear} />
           </div>
-        ) : (
-          <button
-            onClick={() => setEditing(true)}
-            title="Edit this course"
-            className="p-1.5 text-muted hover:text-primary hover:bg-primary-faint rounded-lg transition-colors"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </td>
-    </tr>
+        </td>
+      </tr>
+      {selectedBatchYear !== null && (
+        <tr className="bg-background border-b border-border last:border-b-0">
+          <td colSpan={5} className="px-6 py-4">
+            <BatchYearSectionsPanel
+              instituteCode={instituteCode}
+              course={course}
+              batchYear={selectedBatchYear}
+              sections={sections}
+              onChanged={onSectionsChanged}
+            />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

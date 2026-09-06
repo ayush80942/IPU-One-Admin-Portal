@@ -1,13 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, FormEvent } from "react";
-import { Users2, Plus, Trash2, Pencil } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo, FormEvent } from "react";
+import { Plus, Trash2, Pencil, X } from "lucide-react";
 import { useToast } from "../../components/Toast";
-import SectionCard from "../../components/SectionCard";
-import EmptyState from "../../components/EmptyState";
 import DetailDialog from "../../components/DetailDialog";
 import {
-  fetchSections,
   createSection,
   updateSection,
   deleteSection,
@@ -16,134 +13,174 @@ import {
   updateLabGroup,
   deleteLabGroup,
   type Course,
-  type Institute,
   type SectionDto,
   type LabGroupDto,
 } from "../../lib/api";
-import { programOptionsFrom, BATCH_YEAR_OPTIONS, type CodeOption } from "../../lib/noticeTaxonomy";
 
-// Class sections (and their lab groups) for one institute, scoped further by program and batch
-// year on the create form. Deliberately optional - most programs/batches never split into
-// subgroups, so this must never read as a required setup step. See TimetablePage (moved from
-// there on 2026-09-06 - section creation belongs with the institute/program it's shaping, not on
-// a standalone page) for the sibling "Timetable Slots" concern, which stayed put.
-export default function SectionsPanel({ institute, courses }: { institute: Institute; courses: Course[] }) {
-  const { toast } = useToast();
-  const [sections, setSections] = useState<SectionDto[]>([]);
-  const [loading, setLoading] = useState(true);
+// Class sections (and their lab groups) live on the course row they belong to, scoped by batch
+// year via this dropdown, rather than on a standalone page — a section needs both the institute
+// (already the page's context) and the specific program, so it belongs with the course. Moved
+// here on 2026-09-06 from a per-institute "Class Sections" card that listed every course's
+// sections together; see TimetablePage for the sibling "Timetable Slots" concern, which stayed
+// put. Deliberately optional — most programs/batches never split into subgroups, so this must
+// never read as a required setup step.
+
+export function BatchYearSelect({
+  course,
+  sections,
+  value,
+  onChange,
+}: {
+  course: Course;
+  sections: SectionDto[];
+  value: number | null;
+  onChange: (batchYear: number | null) => void;
+}) {
+  const batchYears = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const s of sections) {
+      if (s.programCode !== course.programCode) continue;
+      counts.set(s.batchYear, (counts.get(s.batchYear) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[0] - a[0]);
+  }, [sections, course.programCode]);
+
+  const isKnownYear = value != null && batchYears.some(([y]) => y === value);
+  const displayValue = value == null ? "" : isKnownYear ? String(value) : "__custom__";
+
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const v = e.target.value;
+    if (v === "") {
+      onChange(null);
+      return;
+    }
+    if (v === "__custom__") return; // already-selected pending year, re-picking the same option
+    if (v === "__new__") {
+      const input = prompt("Batch year to add sections for (e.g. 2024):");
+      if (!input) return;
+      const year = Number(input.trim());
+      if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+        alert("Enter a valid 4-digit year.");
+        return;
+      }
+      onChange(year);
+      return;
+    }
+    onChange(Number(v));
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <select
+        value={displayValue}
+        onChange={handleChange}
+        title="Manage class sections for this program's batches"
+        className="px-2 py-1.5 border border-border rounded-lg text-[12px] bg-surface focus:outline-none focus:border-primary max-w-[10rem]"
+      >
+        <option value="">Sections ▾</option>
+        {batchYears.map(([year, count]) => (
+          <option key={year} value={year}>
+            {year} ({count})
+          </option>
+        ))}
+        {value != null && !isKnownYear && <option value="__custom__">{value} (new)</option>}
+        <option value="__new__">+ Add batch year…</option>
+      </select>
+      {value != null && (
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          title="Close"
+          className="p-1 text-muted hover:text-foreground rounded transition-colors"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function BatchYearSectionsPanel({
+  instituteCode,
+  course,
+  batchYear,
+  sections,
+  onChanged,
+}: {
+  instituteCode: string;
+  course: Course;
+  batchYear: number;
+  sections: SectionDto[];
+  onChanged: () => void;
+}) {
   const [showForm, setShowForm] = useState(false);
   const [selected, setSelected] = useState<SectionDto | null>(null);
 
-  const instituteCourses = useMemo(
+  const batchSections = useMemo(
     () =>
-      courses
-        .filter((c) => c.instituteCode === institute.instituteCode)
-        .sort((a, b) => a.programCode.localeCompare(b.programCode)),
-    [courses, institute.instituteCode]
-  );
-  const programOptions = useMemo(() => programOptionsFrom(instituteCourses), [instituteCourses]);
-  const programLabel = useMemo(() => {
-    const map = new Map(programOptions.map((o) => [o.value, o.label]));
-    return (code: string) => map.get(code) ?? code;
-  }, [programOptions]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const all = await fetchSections();
-      setSections(all.filter((s) => s.instituteCode === institute.instituteCode));
-    } catch (err) {
-      toast(`Failed to load sections: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [institute.instituteCode, toast]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const sorted = useMemo(
-    () =>
-      [...sections].sort(
-        (a, b) =>
-          b.batchYear - a.batchYear ||
-          a.programCode.localeCompare(b.programCode) ||
-          a.sectionName.localeCompare(b.sectionName)
-      ),
-    [sections]
+      sections
+        .filter((s) => s.programCode === course.programCode && s.batchYear === batchYear)
+        .sort((a, b) => a.sectionName.localeCompare(b.sectionName)),
+    [sections, course.programCode, batchYear]
   );
 
   return (
-    <SectionCard
-      title="Class Sections"
-      icon={Users2}
-      action={
-        instituteCourses.length > 0 ? (
-          <button
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-primary hover:underline"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            New Section
-          </button>
-        ) : undefined
-      }
-    >
-      <p className="text-[12.5px] text-muted -mt-2 mb-4">
-        Optional — only add sections where a program&apos;s batch actually splits into subgroups (e.g. B1/B2) for
-        classrooms or labs. Most programs and batch years have none, and that&apos;s the normal case, not a gap to
-        fill in. Who belongs to a section (and its lab groups) is decided by enrollment-number serial range, not a
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-[12.5px] font-bold text-primary">
+          {course.shortName || course.programCode} · Batch {batchYear} — Sections
+        </h3>
+        <button
+          onClick={() => setShowForm(true)}
+          className="inline-flex items-center gap-1.5 text-[12px] font-bold text-primary hover:underline"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          New Section
+        </button>
+      </div>
+
+      <p className="text-[11.5px] text-muted mb-3">
+        Optional — only add sections where this batch actually splits into subgroups (e.g. B1/B2) for classrooms
+        or labs. Who belongs to a section (and its lab groups) is decided by enrollment-number serial range, not a
         roster.
       </p>
 
-      {instituteCourses.length === 0 ? (
-        <EmptyState icon={Users2} message="Add a course to this institute first — a section belongs to a specific program." />
-      ) : loading ? (
-        <div className="space-y-3">
-          {[1, 2].map((i) => (
-            <div key={i} className="skeleton h-12 rounded-lg" />
-          ))}
-        </div>
-      ) : sorted.length === 0 ? (
-        <EmptyState icon={Users2} message="No sections defined — every batch here is currently treated as one group." />
+      {batchSections.length === 0 ? (
+        <p className="text-[12.5px] text-muted py-3">
+          No sections defined for this batch — it&apos;s currently treated as one group.
+        </p>
       ) : (
-        <div className="overflow-x-auto -mx-6 -mb-6">
-          <table className="w-full text-[13.5px]">
-            <thead>
-              <tr className="bg-primary-faint">
-                <th className="px-6 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Section</th>
-                <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Program</th>
-                <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Batch Year</th>
-                <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Serial Range</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((s) => (
-                <tr
-                  key={s.id}
-                  onClick={() => setSelected(s)}
-                  className="hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer"
-                >
-                  <td className="px-6 py-3 font-semibold text-foreground">{s.sectionName}</td>
-                  <td className="px-4 py-3 text-[12px] text-muted">{programLabel(s.programCode)}</td>
-                  <td className="px-4 py-3">{s.batchYear}</td>
-                  <td className="px-4 py-3 tabular-nums text-muted">{s.serialRangeStart}–{s.serialRangeEnd}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="space-y-1.5">
+          {batchSections.map((s) => (
+            <li key={s.id}>
+              <button
+                onClick={() => setSelected(s)}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface border border-border hover:border-primary text-[13px] transition-colors"
+              >
+                <span className="font-semibold text-foreground">{s.sectionName}</span>
+                <span className="tabular-nums text-muted">
+                  {s.serialRangeStart}–{s.serialRangeEnd}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
 
       {showForm && (
         <DetailDialog
           title="New Section"
-          subtitle={`A cohort subdivision within ${institute.shortName || institute.instituteName}, e.g. B1 within AIDS 2024.`}
+          subtitle={`A cohort subdivision within ${course.programName}, batch ${batchYear}.`}
           onClose={() => setShowForm(false)}
         >
           <SectionForm
-            instituteCode={institute.instituteCode}
-            programOptions={programOptions}
-            onSaved={() => { setShowForm(false); load(); }}
+            instituteCode={instituteCode}
+            programCode={course.programCode}
+            batchYear={batchYear}
+            onSaved={() => {
+              setShowForm(false);
+              onChanged();
+            }}
           />
         </DetailDialog>
       )}
@@ -151,33 +188,39 @@ export default function SectionsPanel({ institute, courses }: { institute: Insti
       {selected && (
         <DetailDialog
           title={selected.sectionName}
-          subtitle={`${programLabel(selected.programCode)} · Batch ${selected.batchYear}`}
+          subtitle={`${course.shortName || course.programCode} · Batch ${selected.batchYear}`}
           onClose={() => setSelected(null)}
         >
           <SectionDetail
             section={selected}
-            onSectionChanged={(updated) => { setSelected(updated); load(); }}
-            onSectionDeleted={() => { setSelected(null); load(); }}
+            onSectionChanged={(updated) => {
+              setSelected(updated);
+              onChanged();
+            }}
+            onSectionDeleted={() => {
+              setSelected(null);
+              onChanged();
+            }}
           />
         </DetailDialog>
       )}
-    </SectionCard>
+    </div>
   );
 }
 
 function SectionForm({
   instituteCode,
-  programOptions,
+  programCode,
+  batchYear,
   onSaved,
 }: {
   instituteCode: string;
-  programOptions: CodeOption[];
+  programCode: string;
+  batchYear: number;
   onSaved: () => void;
 }) {
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
-  const [programCode, setProgramCode] = useState(programOptions[0]?.value ?? "");
-  const [batchYear, setBatchYear] = useState(String(BATCH_YEAR_OPTIONS[0]?.value ?? new Date().getFullYear()));
   const [sectionName, setSectionName] = useState("");
   const [serialRangeStart, setSerialRangeStart] = useState("");
   const [serialRangeEnd, setSerialRangeEnd] = useState("");
@@ -186,7 +229,7 @@ function SectionForm({
     e.preventDefault();
     const start = Number(serialRangeStart);
     const end = Number(serialRangeEnd);
-    if (!programCode || !sectionName.trim() || !serialRangeStart || !serialRangeEnd) {
+    if (!sectionName.trim() || !serialRangeStart || !serialRangeEnd) {
       toast("Please fill all required fields", "error");
       return;
     }
@@ -199,7 +242,7 @@ function SectionForm({
       await createSection({
         instituteCode,
         programCode,
-        batchYear: Number(batchYear),
+        batchYear,
         sectionName: sectionName.trim(),
         serialRangeStart: start,
         serialRangeEnd: end,
@@ -215,33 +258,46 @@ function SectionForm({
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
-      <Field label="Program *">
-        <select value={programCode} onChange={(e) => setProgramCode(e.target.value)} className={selectClass}>
-          {programOptions.length === 0 && <option value="">No programs for this institute</option>}
-          {programOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      </Field>
-      <Field label="Batch Year *">
-        <select value={batchYear} onChange={(e) => setBatchYear(e.target.value)} className={selectClass}>
-          {BATCH_YEAR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      </Field>
       <Field label="Section Name *">
-        <input value={sectionName} onChange={(e) => setSectionName(e.target.value)} placeholder="e.g. B1" className={inputClass} />
+        <input
+          value={sectionName}
+          onChange={(e) => setSectionName(e.target.value)}
+          placeholder="e.g. B1"
+          autoFocus
+          className={inputClass}
+        />
       </Field>
       <div />
       <Field label="Serial Range Start *">
-        <input type="number" min={0} value={serialRangeStart} onChange={(e) => setSerialRangeStart(e.target.value)} placeholder="e.g. 1" className={inputClass} />
+        <input
+          type="number"
+          min={0}
+          value={serialRangeStart}
+          onChange={(e) => setSerialRangeStart(e.target.value)}
+          placeholder="e.g. 1"
+          className={inputClass}
+        />
       </Field>
       <Field label="Serial Range End *">
-        <input type="number" min={0} value={serialRangeEnd} onChange={(e) => setSerialRangeEnd(e.target.value)} placeholder="e.g. 60" className={inputClass} />
+        <input
+          type="number"
+          min={0}
+          value={serialRangeEnd}
+          onChange={(e) => setSerialRangeEnd(e.target.value)}
+          placeholder="e.g. 60"
+          className={inputClass}
+        />
       </Field>
       <p className="col-span-2 text-[11.5px] text-muted -mt-1">
         A student falls in this section if their enrollment number&apos;s 3-digit serial component lies in this
         range — read the actual ranges off the university&apos;s own class list or timetable PDF.
       </p>
       <div className="col-span-2 flex justify-end mt-2">
-        <button type="submit" disabled={submitting} className="px-5 py-2.5 rounded-[10px] text-[14px] font-semibold text-white bg-primary hover:bg-primary-light transition-colors disabled:opacity-60">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="px-5 py-2.5 rounded-[10px] text-[14px] font-semibold text-white bg-primary hover:bg-primary-light transition-colors disabled:opacity-60"
+        >
           {submitting ? "Creating…" : "Create Section"}
         </button>
       </div>
@@ -281,7 +337,9 @@ function SectionDetail({
     }
   }, [section.id, toast]);
 
-  useEffect(() => { loadGroups(); }, [loadGroups]);
+  useEffect(() => {
+    loadGroups();
+  }, [loadGroups]);
 
   const handleSaveSection = async (e: FormEvent) => {
     e.preventDefault();
@@ -293,7 +351,11 @@ function SectionDetail({
     }
     setSavingSection(true);
     try {
-      const updated = await updateSection(section.id, { sectionName: sectionName.trim(), serialRangeStart: start, serialRangeEnd: end });
+      const updated = await updateSection(section.id, {
+        sectionName: sectionName.trim(),
+        serialRangeStart: start,
+        serialRangeEnd: end,
+      });
       toast("Section updated");
       onSectionChanged(updated);
     } catch (err) {
@@ -335,10 +397,22 @@ function SectionDetail({
         </Field>
         <div />
         <Field label="Serial Range Start">
-          <input type="number" min={0} value={serialRangeStart} onChange={(e) => setSerialRangeStart(e.target.value)} className={inputClass} />
+          <input
+            type="number"
+            min={0}
+            value={serialRangeStart}
+            onChange={(e) => setSerialRangeStart(e.target.value)}
+            className={inputClass}
+          />
         </Field>
         <Field label="Serial Range End">
-          <input type="number" min={0} value={serialRangeEnd} onChange={(e) => setSerialRangeEnd(e.target.value)} className={inputClass} />
+          <input
+            type="number"
+            min={0}
+            value={serialRangeEnd}
+            onChange={(e) => setSerialRangeEnd(e.target.value)}
+            className={inputClass}
+          />
         </Field>
         <div className="col-span-2 flex justify-between items-center mt-1">
           <button
@@ -350,7 +424,11 @@ function SectionDetail({
             <Trash2 className="w-3.5 h-3.5" />
             {deleting ? "Deleting…" : "Delete Section"}
           </button>
-          <button type="submit" disabled={savingSection} className="px-5 py-2.5 rounded-[10px] text-[14px] font-semibold text-white bg-primary hover:bg-primary-light transition-colors disabled:opacity-60">
+          <button
+            type="submit"
+            disabled={savingSection}
+            className="px-5 py-2.5 rounded-[10px] text-[14px] font-semibold text-white bg-primary hover:bg-primary-light transition-colors disabled:opacity-60"
+          >
             {savingSection ? "Saving…" : "Save Changes"}
           </button>
         </div>
@@ -376,10 +454,16 @@ function SectionDetail({
           {groups.map((g) => (
             <li key={g.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-background text-[13px]">
               <span className="font-semibold text-foreground">{g.groupName}</span>
-              <span className="tabular-nums text-muted">{g.serialRangeStart}–{g.serialRangeEnd}</span>
+              <span className="tabular-nums text-muted">
+                {g.serialRangeStart}–{g.serialRangeEnd}
+              </span>
               <div className="flex items-center gap-3 ml-auto">
-                <button onClick={() => setEditingGroup(g)} className="text-muted hover:text-primary"><Pencil className="w-3.5 h-3.5" /></button>
-                <button onClick={() => handleDeleteGroup(g)} className="text-muted hover:text-danger"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button onClick={() => setEditingGroup(g)} className="text-muted hover:text-primary">
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => handleDeleteGroup(g)} className="text-muted hover:text-danger">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             </li>
           ))}
@@ -388,7 +472,14 @@ function SectionDetail({
 
       {showGroupForm && (
         <div className="mt-4 pt-4 border-t border-border">
-          <LabGroupForm sectionId={section.id} onSaved={() => { setShowGroupForm(false); loadGroups(); }} onCancel={() => setShowGroupForm(false)} />
+          <LabGroupForm
+            sectionId={section.id}
+            onSaved={() => {
+              setShowGroupForm(false);
+              loadGroups();
+            }}
+            onCancel={() => setShowGroupForm(false)}
+          />
         </div>
       )}
       {editingGroup && (
@@ -396,7 +487,10 @@ function SectionDetail({
           <LabGroupForm
             sectionId={section.id}
             existing={editingGroup}
-            onSaved={() => { setEditingGroup(null); loadGroups(); }}
+            onSaved={() => {
+              setEditingGroup(null);
+              loadGroups();
+            }}
             onCancel={() => setEditingGroup(null)}
           />
         </div>
@@ -470,8 +564,8 @@ function LabGroupForm({
   );
 }
 
-const inputClass = "border border-border rounded-lg px-3 py-2.5 text-[14px] bg-background focus:outline-none focus:border-primary transition-colors w-full";
-const selectClass = inputClass;
+const inputClass =
+  "border border-border rounded-lg px-3 py-2.5 text-[14px] bg-background focus:outline-none focus:border-primary transition-colors w-full";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

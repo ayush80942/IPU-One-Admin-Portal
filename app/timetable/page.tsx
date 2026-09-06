@@ -31,10 +31,11 @@ const DAY_LABEL: Record<TimetableDayOfWeek, string> = {
   SUNDAY: "Sunday",
 };
 
-// Section/lab-group creation moved to each institute's own page (institutes/[instituteCode] ->
-// SectionsPanel) on 2026-09-06 - that's where the institute+program context already lives, and
-// not every institute/program has that further division, so it shouldn't be a standalone
-// destination of its own. This page is now just the weekly schedule per teaching offering.
+// Section/lab-group creation lives on each institute's own page (institutes/[instituteCode] ->
+// a "Sections" dropdown on each course row, scoped by batch year via CourseSectionsDropdown) -
+// that's where the institute+program context already lives, and not every institute/program has
+// that further division, so it shouldn't be a standalone destination of its own. This page is
+// now just the weekly schedule per teaching offering.
 export default function TimetablePage() {
   const { toast } = useToast();
 
