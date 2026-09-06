@@ -128,65 +128,95 @@ export function BatchYearSectionsPanel({
     [sections, course.programCode, batchYear]
   );
 
+  // "Enabled" is derived, not persisted — on once a Section row exists (or the create form is
+  // open), off otherwise. There's nothing to store for "off with zero sections", that's just the
+  // ordinary empty state; the switch can't be flipped off once real sections exist (delete them
+  // individually below instead), so it never looks on with nothing behind it.
+  const sectionsEnabled = batchSections.length > 0 || showForm;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-[12.5px] font-bold text-primary">
           {course.shortName || course.programCode} · Batch {batchYear} — Sections
         </h3>
-        <button
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-1.5 text-[12px] font-bold text-primary hover:underline"
+        <label
+          className="inline-flex items-center gap-2 select-none"
+          title={batchSections.length > 0 ? "Delete every section below to disable" : "Most batches leave this off"}
         >
-          <Plus className="w-3.5 h-3.5" />
-          New Section
-        </button>
+          <span className="text-[12px] font-semibold text-muted">Sections enabled</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={sectionsEnabled}
+            disabled={batchSections.length > 0}
+            onClick={() => setShowForm((v) => !v)}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed ${
+              sectionsEnabled ? "bg-primary" : "bg-border"
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                sectionsEnabled ? "translate-x-[1.125rem]" : "translate-x-1"
+              }`}
+            />
+          </button>
+        </label>
       </div>
 
       <p className="text-[11.5px] text-muted mb-3">
-        Optional — only add sections where this batch actually splits into subgroups (e.g. B1/B2) for classrooms
-        or labs. Students pick which section (and lab group) they&apos;re in themselves from the app; capacity here
-        is just an expected headcount, not enforced.
+        Optional — only turn this on where the batch actually splits into subgroups (e.g. B1/B2) for classrooms
+        or labs; most never do. Students pick which section (and lab group) they&apos;re in themselves from the
+        app; capacity here is just an expected headcount, not enforced.
       </p>
 
-      {batchSections.length === 0 ? (
+      {!sectionsEnabled ? (
         <p className="text-[12.5px] text-muted py-3">
-          No sections defined for this batch — it&apos;s currently treated as one group.
+          Sections are off for this batch — it&apos;s treated as one group. Toggle on above to add one.
         </p>
       ) : (
-        <ul className="space-y-1.5">
-          {batchSections.map((s) => (
-            <li key={s.id}>
-              <button
-                onClick={() => setSelected(s)}
-                className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface border border-border hover:border-primary text-[13px] transition-colors"
-              >
-                <span className="font-semibold text-foreground">{s.sectionName}</span>
-                <span className="tabular-nums text-muted">
-                  {s.capacity != null ? `Capacity: ${s.capacity}` : "—"}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+        <>
+          {batchSections.length > 0 && (
+            <ul className="space-y-1.5 mb-3">
+              {batchSections.map((s) => (
+                <li key={s.id}>
+                  <button
+                    onClick={() => setSelected(s)}
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-surface border border-border hover:border-primary text-[13px] transition-colors"
+                  >
+                    <span className="font-semibold text-foreground">{s.sectionName}</span>
+                    <span className="tabular-nums text-muted">
+                      {s.capacity != null ? `Capacity: ${s.capacity}` : "—"}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
-      {showForm && (
-        <DetailDialog
-          title="New Section"
-          subtitle={`A cohort subdivision within ${course.programName}, batch ${batchYear}.`}
-          onClose={() => setShowForm(false)}
-        >
-          <SectionForm
-            instituteCode={instituteCode}
-            programCode={course.programCode}
-            batchYear={batchYear}
-            onSaved={() => {
-              setShowForm(false);
-              onChanged();
-            }}
-          />
-        </DetailDialog>
+          {showForm ? (
+            <div className="pt-1 border-t border-border">
+              <SectionForm
+                instituteCode={instituteCode}
+                programCode={course.programCode}
+                batchYear={batchYear}
+                onSaved={() => {
+                  setShowForm(false);
+                  onChanged();
+                }}
+                onCancel={() => setShowForm(false)}
+              />
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowForm(true)}
+              className="inline-flex items-center gap-1.5 text-[12px] font-bold text-primary hover:underline"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add another section
+            </button>
+          )}
+        </>
       )}
 
       {selected && (
@@ -217,11 +247,13 @@ function SectionForm({
   programCode,
   batchYear,
   onSaved,
+  onCancel,
 }: {
   instituteCode: string;
   programCode: string;
   batchYear: number;
   onSaved: () => void;
+  onCancel: () => void;
 }) {
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
@@ -277,7 +309,14 @@ function SectionForm({
         Students pick this section for themselves in the app — capacity is just an expected headcount and
         isn&apos;t enforced.
       </p>
-      <div className="col-span-2 flex justify-end mt-2">
+      <div className="col-span-2 flex justify-end gap-3 mt-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 rounded-[10px] text-[13px] font-semibold text-muted hover:text-foreground"
+        >
+          Cancel
+        </button>
         <button
           type="submit"
           disabled={submitting}

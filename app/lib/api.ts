@@ -132,6 +132,13 @@ export interface StudentProfile {
   // null until the student provides it. See lib/studentTaxonomy.ts for display labels.
   category: string | null;
   subCategory: string | null;
+  // The student's own section/lab-group pick (or an admin's correction on their behalf) - see
+  // "Sections & lab groups" below. Null until someone picks one; there's no roll-number-range
+  // auto-assignment any more, not every class divides this way.
+  sectionId: string | null;
+  sectionName: string | null;
+  labGroupId: string | null;
+  labGroupName: string | null;
 }
 
 // ===== Admin account types =====
@@ -1685,6 +1692,32 @@ export async function updateLabGroup(groupId: string, request: UpdateLabGroupReq
     body: JSON.stringify(request),
   });
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to update lab group: ${res.status}`));
+  return res.json();
+}
+
+export interface AssignStudentSectionRequest {
+  sectionId: string;
+  labGroupId: string | null;
+}
+
+export interface StudentSectionSelection {
+  sectionId: string;
+  sectionName: string;
+  labGroupId: string | null;
+  labGroupName: string | null;
+}
+
+/** An institute admin assigning or correcting a student's own section/group pick directly. */
+export async function assignStudentSection(
+  enrollmentNo: string,
+  request: AssignStudentSectionRequest
+): Promise<StudentSectionSelection> {
+  const res = await apiFetch(`${API_BASE}/api/admin/students/${encodeURIComponent(enrollmentNo)}/section`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to assign section: ${res.status}`));
   return res.json();
 }
 

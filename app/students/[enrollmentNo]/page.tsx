@@ -12,6 +12,7 @@ import {
   FileCheck2,
   Mail,
   Phone,
+  Pencil,
   Users as UsersIcon,
 } from "lucide-react";
 import { useToast } from "../../components/Toast";
@@ -21,12 +22,20 @@ import Pill from "../../components/Pill";
 import EmptyState from "../../components/EmptyState";
 import SectionCard from "../../components/SectionCard";
 import { DetailField } from "../../components/DetailDialog";
+import DetailDialog from "../../components/DetailDialog";
 import { AuthedImage } from "../../components/AuthedFile";
 import FeeSubmissionDialog from "../../components/FeeSubmissionDialog";
+import { SELECT_CLASS } from "../../components/Filter";
 import {
   fetchStudentDetail,
   overrideSubjectCredits,
+  fetchSections,
+  fetchLabGroups,
+  assignStudentSection,
   StudentDetail,
+  StudentProfile,
+  SectionDto,
+  LabGroupDto,
   SemesterResult,
   SubjectResult,
   DocumentResponse,
@@ -263,6 +272,142 @@ function SubjectCreditOverrideDialog({
   );
 }
 
+/**
+ * Assigns or corrects a student's own section/lab-group pick. Options come from the admin's
+ * already-scoped `GET /api/admin/sections`, filtered client-side to this student's own
+ * institute+programme+batch year - not every class divides into sections, so an empty match
+ * list is the normal case for most students, not an error.
+ */
+function AssignSectionDialog({
+  profile,
+  onClose,
+  onDone,
+}: {
+  profile: StudentProfile;
+  onClose: () => void;
+  onDone: (selection: { sectionId: string; sectionName: string; labGroupId: string | null; labGroupName: string | null }) => void;
+}) {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [sections, setSections] = useState<SectionDto[]>([]);
+  const [sectionId, setSectionId] = useState(profile.sectionId ?? "");
+  const [groups, setGroups] = useState<LabGroupDto[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [labGroupId, setLabGroupId] = useState(profile.labGroupId ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const matchingSections = useMemo(
+    () =>
+      sections.filter(
+        (s) =>
+          s.instituteCode === profile.instituteCode &&
+          s.programCode === profile.programCode &&
+          s.batchYear === profile.batchYear
+      ),
+    [sections, profile.instituteCode, profile.programCode, profile.batchYear]
+  );
+
+  useEffect(() => {
+    fetchSections()
+      .then(setSections)
+      .catch((err) => toast(err instanceof Error ? err.message : "Failed to load sections", "error"))
+      .finally(() => setLoading(false));
+  }, [toast]);
+
+  useEffect(() => {
+    if (!sectionId) {
+      setGroups([]);
+      return;
+    }
+    setGroupsLoading(true);
+    fetchLabGroups(sectionId)
+      .then(setGroups)
+      .catch((err) => toast(err instanceof Error ? err.message : "Failed to load groups", "error"))
+      .finally(() => setGroupsLoading(false));
+  }, [sectionId, toast]);
+
+  const submit = async () => {
+    if (!sectionId) return;
+    setSaving(true);
+    try {
+      const result = await assignStudentSection(profile.enrollmentNo, {
+        sectionId,
+        labGroupId: labGroupId || null,
+      });
+      toast("Section assigned", "success");
+      onDone(result);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to assign section", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <DetailDialog
+      title="Assign section"
+      subtitle={`${profile.courseShortName || profile.programName || "—"} · Batch ${profile.batchYear ?? "—"}`}
+      onClose={onClose}
+      maxWidthClass="max-w-sm"
+    >
+      {loading ? (
+        <div className="skeleton h-24 rounded-lg" />
+      ) : matchingSections.length === 0 ? (
+        <p className="text-[13px] text-muted">
+          No sections are defined yet for this institute/programme/batch year. Set them up from the{" "}
+          <Link href={`/institutes/${encodeURIComponent(profile.instituteCode ?? "")}`} className="font-semibold text-primary hover:underline">
+            institute&apos;s page
+          </Link>{" "}
+          first — most classes never need this.
+        </p>
+      ) : (
+        <>
+          <label className="block text-[12px] font-semibold text-muted mb-1">Section</label>
+          <select
+            value={sectionId}
+            onChange={(e) => { setSectionId(e.target.value); setLabGroupId(""); }}
+            className={`${SELECT_CLASS} mb-3`}
+          >
+            <option value="">Select a section…</option>
+            {matchingSections.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.sectionName}{s.capacity != null ? ` · ${s.capacity} students` : ""}
+              </option>
+            ))}
+          </select>
+
+          {sectionId && !groupsLoading && groups.length > 0 && (
+            <>
+              <label className="block text-[12px] font-semibold text-muted mb-1">Lab group (optional)</label>
+              <select value={labGroupId} onChange={(e) => setLabGroupId(e.target.value)} className={`${SELECT_CLASS} mb-4`}>
+                <option value="">No group</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.groupName}{g.capacity != null ? ` · ${g.capacity} students` : ""}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+
+          <div className="flex justify-end gap-2 mt-2">
+            <button onClick={onClose} className="px-3 py-2 text-[13px] font-semibold text-muted hover:text-foreground">
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              disabled={saving || !sectionId}
+              className="px-4 py-2 rounded-lg bg-primary text-white text-[13px] font-bold hover:bg-primary-light transition-colors disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </>
+      )}
+    </DetailDialog>
+  );
+}
+
 function typeLabel(type: string) {
   return type.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -320,6 +465,7 @@ export default function StudentDetailPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<DocumentResponse | null>(null);
   const [selectedFeeId, setSelectedFeeId] = useState<number | null>(null);
+  const [assigningSection, setAssigningSection] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -456,7 +602,19 @@ export default function StudentDetailPage() {
 
       <div className="space-y-6">
         {/* Profile */}
-        <SectionCard title="Profile" icon={UsersIcon}>
+        <SectionCard
+          title="Profile"
+          icon={UsersIcon}
+          action={
+            <button
+              onClick={() => setAssigningSection(true)}
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-primary hover:underline"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              {profile.sectionName ? "Change section" : "Assign section"}
+            </button>
+          }
+        >
           <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
             <DetailField label="Program" value={profile.courseShortName || profile.programName} />
             <DetailField label="Program Code" value={profile.programCode} />
@@ -464,6 +622,12 @@ export default function StudentDetailPage() {
             <DetailField label="Institute Code" value={profile.instituteCode} />
             <DetailField label="Batch Year" value={profile.batchYear} />
             <DetailField label="Admission Year" value={profile.admissionYear} />
+            <DetailField
+              label="Section"
+              value={profile.sectionName ? (
+                profile.labGroupName ? `${profile.sectionName} · Group ${profile.labGroupName}` : profile.sectionName
+              ) : null}
+            />
             <DetailField label="Gender" value={profile.gender} />
             <DetailField label="Contact Number" value={profile.contactNumber} />
             <DetailField label="Email" value={profile.email} />
@@ -561,6 +725,14 @@ export default function StudentDetailPage() {
           submissionId={selectedFeeId}
           onClose={() => setSelectedFeeId(null)}
           onReviewed={() => { setSelectedFeeId(null); load(); toast("Fee status updated"); }}
+        />
+      )}
+
+      {assigningSection && (
+        <AssignSectionDialog
+          profile={profile}
+          onClose={() => setAssigningSection(false)}
+          onDone={() => { setAssigningSection(false); load(); }}
         />
       )}
     </div>

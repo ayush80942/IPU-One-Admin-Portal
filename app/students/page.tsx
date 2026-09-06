@@ -85,6 +85,7 @@ export default function StudentsPage() {
   const [instituteCode, setInstituteCode] = useState(ALL);
   const [programCode, setProgramCode] = useState(ALL);
   const [batchYear, setBatchYear] = useState(ALL);
+  const [section, setSection] = useState(ALL);
   const [status, setStatus] = useState(ALL);
   const [category, setCategory] = useState(ALL);
 
@@ -129,6 +130,14 @@ export default function StudentsPage() {
     return [...years].sort((a, b) => b - a);
   }, [students]);
 
+  // Only sections some student has actually picked — most institutes/programs don't divide this
+  // way at all, so an empty option list (falling back to "no filter shown") is the common case.
+  const sectionOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const s of students) if (s.sectionName) names.add(s.sectionName);
+    return [...names].sort();
+  }, [students]);
+
   // Only categories some student actually has, same reasoning as instituteOptions above -
   // most students won't have entered one yet, so a static full list would mostly be dead ends.
   const categoryOptions = useMemo(() => {
@@ -142,6 +151,7 @@ export default function StudentsPage() {
       if (instituteCode && s.instituteCode !== instituteCode) return false;
       if (programCode && s.programCode !== programCode) return false;
       if (batchYear && String(s.batchYear ?? "") !== batchYear) return false;
+      if (section && s.sectionName !== section) return false;
       if (status === "passed" && s.passedOut !== true) return false;
       if (status === "ongoing" && s.passedOut !== false) return false;
       if (status === "unknown" && s.passedOut !== null) return false;
@@ -175,6 +185,7 @@ export default function StudentsPage() {
       clear: () => setProgramCode(ALL),
     },
     batchYear && { label: `Batch ${batchYear}`, clear: () => setBatchYear(ALL) },
+    section && { label: `Section ${section}`, clear: () => setSection(ALL) },
     status && {
       label: STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status,
       clear: () => setStatus(ALL),
@@ -190,6 +201,7 @@ export default function StudentsPage() {
     setInstituteCode(ALL);
     setProgramCode(ALL);
     setBatchYear(ALL);
+    setSection(ALL);
     setStatus(ALL);
     setCategory(ALL);
     setSearch("");
@@ -249,6 +261,17 @@ export default function StudentsPage() {
               ))}
             </select>
           </Filter>
+
+          {sectionOptions.length > 0 && (
+            <Filter label="Section">
+              <select value={section} onChange={(e) => setSection(e.target.value)} className={SELECT_CLASS}>
+                <option value={ALL}>All Sections</option>
+                {sectionOptions.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </Filter>
+          )}
 
           <Filter label="Category">
             <select value={category} onChange={(e) => setCategory(e.target.value)} className={SELECT_CLASS}>
@@ -324,6 +347,7 @@ export default function StudentsPage() {
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Program</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Institute</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Batch</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Section</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Year &amp; Sem</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Category</th>
                   <th className="px-4 py-3 w-8" />
@@ -366,6 +390,13 @@ export default function StudentsPage() {
                       {s.instituteShortName || s.instituteName || "—"}
                     </td>
                     <td className="px-4 py-3 tabular-nums">{s.batchYear || "—"}</td>
+                    <td className="px-4 py-3">
+                      {s.sectionName ? (
+                        <span>{s.sectionName}{s.labGroupName ? ` · ${s.labGroupName}` : ""}</span>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">{yearSemPill(s.passedOut, s.batchYear)}</td>
                     <td className="px-4 py-3">{s.category ? categoryLabel(s.category) : "—"}</td>
                     <td className="px-4 py-3">
