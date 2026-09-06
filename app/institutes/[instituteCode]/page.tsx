@@ -24,6 +24,7 @@ import StatTile from "../../components/StatTile";
 import Pill from "../../components/Pill";
 import EmptyState from "../../components/EmptyState";
 import SectionCard from "../../components/SectionCard";
+import SectionsPanel from "./SectionsPanel";
 import { AuthedImage } from "../../components/AuthedFile";
 import { AdminForm, PasswordForm } from "../../components/AdminFormDialog";
 import {
@@ -377,6 +378,10 @@ export default function InstituteDetailPage() {
             />
           )}
         </SectionCard>
+
+        {/* Class sections (roll-range based subdivisions, e.g. B1/B2) - per program and batch
+            year, since not every program/batch here has this further division. */}
+        <SectionsPanel institute={institute} courses={courses} />
 
         {/* Admins */}
         <SectionCard

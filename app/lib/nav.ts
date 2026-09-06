@@ -57,9 +57,10 @@ export const NAV_ITEMS: NavItem[] = [
   // institute-scoped like Students, not gated behind the FEEDBACK flag since the entity itself
   // (see Teacher's Javadoc on the backend) is meant to outlive that one module.
   { href: "/teachers", label: "Teachers", icon: UserCog },
-  // Sections/lab-groups (roll-range based class shape) and the timetable slots hung off a
-  // teaching offering - institute-scoped like Teachers, not gated behind a feature flag since
-  // there's no student-facing "TIMETABLE" tab yet for this to mirror.
+  // The weekly schedule (day/time/room) hung off each teaching offering - institute-scoped like
+  // Teachers, not gated behind a feature flag since there's no student-facing "TIMETABLE" tab yet
+  // for this to mirror. Section/lab-group creation itself now lives on each institute's own page
+  // (institutes/[instituteCode] -> Class Sections), not here.
   { href: "/timetable", label: "Timetable", icon: CalendarDays },
   // Entirely a Student Cell's own module now - an institute admin manages their own institute's
   // offerings/windows/analytics and the university-wide question bank alike. A super admin has
