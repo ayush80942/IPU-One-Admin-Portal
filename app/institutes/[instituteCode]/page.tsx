@@ -4,9 +4,11 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Camera,
   GraduationCap,
   KeyRound,
   Landmark,
+  LogIn,
   Pencil,
   Plus,
   ShieldCheck,
@@ -17,14 +19,17 @@ import {
 } from "lucide-react";
 import { useToast } from "../../components/Toast";
 import { useAdminSession } from "../../components/AuthGate";
+import { impersonate } from "../../lib/auth";
 import StatTile from "../../components/StatTile";
 import Pill from "../../components/Pill";
 import EmptyState from "../../components/EmptyState";
 import SectionCard from "../../components/SectionCard";
+import { AuthedImage } from "../../components/AuthedFile";
 import { AdminForm, PasswordForm } from "../../components/AdminFormDialog";
 import {
   fetchInstitutes,
   updateInstitute,
+  uploadInstituteLogo,
   fetchCourses,
   createCourse,
   updateCourse,
@@ -64,17 +69,17 @@ export default function InstituteDetailPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [shortName, setShortName] = useState("");
-  const [savingShortName, setSavingShortName] = useState(false);
-  // Locked (read-only) once a value already exists - a short name or an onboarded=true is
-  // essentially a one-time, life-of-the-institute fact, so accidental edits are worth guarding
-  // against. The Edit button unlocks it; saving (or toggling onboarded back off) re-locks
-  // automatically once the field has a value again.
-  const [editingShortName, setEditingShortName] = useState(false);
-  const [togglingOnboarded, setTogglingOnboarded] = useState(false);
-  const [editingOnboarded, setEditingOnboarded] = useState(false);
+  const [onboardedDraft, setOnboardedDraft] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  // Locked (read-only) once the profile is "complete" - a short name and onboarded=true are
+  // essentially one-time, life-of-the-institute facts, so accidental edits are worth guarding
+  // against. One "Edit Profile" button unlocks both fields together; saving (or a still-
+  // incomplete profile) re-locks/keeps them open as a group, not per field.
+  const [editingProfile, setEditingProfile] = useState(false);
   const [addingCourse, setAddingCourse] = useState(false);
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
   const [pendingFeature, setPendingFeature] = useState<StudentFeature | null>(null);
+  const [impersonating, setImpersonating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,8 +100,8 @@ export default function InstituteDetailPage() {
 
       const found = institutesData.find((i) => i.instituteCode === instituteCode);
       setShortName(found?.shortName ?? "");
-      setEditingShortName(!found?.shortName);
-      setEditingOnboarded(!found?.onboarded);
+      setOnboardedDraft(found?.onboarded ?? false);
+      setEditingProfile(!(found?.shortName && found?.onboarded));
       if (!found) setLoadError("Institute not found");
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Unknown error");
@@ -123,43 +128,39 @@ export default function InstituteDetailPage() {
   const instituteOptions = useMemo(() => instituteOptionsFrom(institutes), [institutes]);
   const enabledFeatures = flags.find((f) => f.instituteCode === instituteCode)?.enabledFeatures ?? [];
 
-  const shortNameDirty = institute != null && shortName !== (institute.shortName ?? "");
+  const profileDirty =
+    institute != null &&
+    (shortName !== (institute.shortName ?? "") || onboardedDraft !== institute.onboarded);
+  // Cancel only makes sense once there's a previously-saved state to fall back to - a
+  // brand-new institute with nothing set yet has nowhere to "cancel" back to.
+  const profileComplete = Boolean(institute?.shortName) && Boolean(institute?.onboarded);
 
-  const saveShortName = async () => {
+  const saveProfile = async () => {
     if (!institute) return;
-    setSavingShortName(true);
+    setSavingProfile(true);
     try {
       const updated = await updateInstitute(institute.instituteCode, {
         shortName: shortName.trim() === "" ? null : shortName.trim(),
+        onboarded: onboardedDraft,
       });
       setInstitutes((prev) => prev.map((i) => (i.instituteCode === updated.instituteCode ? updated : i)));
-      setEditingShortName(!updated.shortName);
+      setEditingProfile(!(updated.shortName && updated.onboarded));
       toast("Institute updated", "success");
     } catch (err) {
       toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
-      setSavingShortName(false);
+      setSavingProfile(false);
     }
   };
 
-  const cancelEditShortName = () => {
+  const cancelEditProfile = () => {
     setShortName(institute?.shortName ?? "");
-    setEditingShortName(false);
+    setOnboardedDraft(institute?.onboarded ?? false);
+    setEditingProfile(false);
   };
 
-  const toggleOnboarded = async (checked: boolean) => {
-    if (!institute) return;
-    setTogglingOnboarded(true);
-    try {
-      const updated = await updateInstitute(institute.instituteCode, { onboarded: checked });
-      setInstitutes((prev) => prev.map((i) => (i.instituteCode === updated.instituteCode ? updated : i)));
-      setEditingOnboarded(!updated.onboarded);
-      toast(checked ? "Marked as onboarded" : "Marked as not onboarded", "success");
-    } catch (err) {
-      toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    } finally {
-      setTogglingOnboarded(false);
-    }
+  const handleLogoUploaded = (updated: Institute) => {
+    setInstitutes((prev) => prev.map((i) => (i.instituteCode === updated.instituteCode ? updated : i)));
   };
 
   // Optimistic, same pattern as /feature-flags — flip it locally, only re-fetch on failure.
@@ -184,6 +185,17 @@ export default function InstituteDetailPage() {
       load();
     } finally {
       setPendingFeature(null);
+    }
+  };
+
+  const logInAs = async (admin: AdminUser) => {
+    setImpersonating(admin.id);
+    try {
+      await impersonate(admin.id);
+      router.replace("/");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to log in as this admin", "error");
+      setImpersonating(null);
     }
   };
 
@@ -240,64 +252,44 @@ export default function InstituteDetailPage() {
       <div className="bg-surface border border-border rounded-2xl shadow-sm p-6 mb-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-4 min-w-0">
-            <div className="w-14 h-14 rounded-2xl bg-primary-faint text-primary flex items-center justify-center shrink-0">
-              <Landmark className="w-6 h-6" />
-            </div>
+            <InstituteLogo institute={institute} onUploaded={handleLogoUploaded} />
             <div className="min-w-0">
-              <h1 className="text-xl font-bold text-foreground">{institute.instituteName}</h1>
+              <h1 className="text-xl font-bold text-foreground">
+                {institute.instituteName}
+                {institute.shortName && !editingProfile && (
+                  <span className="text-muted font-semibold"> ({institute.shortName})</span>
+                )}
+              </h1>
               <div className="text-[13px] font-mono text-muted mt-1">{institute.instituteCode}</div>
             </div>
           </div>
 
-          {/* Top-right onboarded flag - locked read-only once true (a one-time, life-of-the-
-              institute fact), same reasoning as the short name below. Not yet onboarded stays
-              freely toggleable, since there's nothing settled to protect yet. */}
-          {institute.onboarded && !editingOnboarded ? (
+          {/* Single edit button for the whole profile (short name + onboarded together) - once
+              both are set, the profile is a settled, life-of-the-institute fact and this is the
+              only way back in. Still incomplete, it just stays open below with nothing to click. */}
+          {!editingProfile && (
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[12px] font-bold px-2.5 py-1 rounded-full text-teal-600 bg-teal-50">
-                Onboarded
+              <span
+                className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${
+                  institute.onboarded ? "text-teal-600 bg-teal-50" : "text-muted bg-background border border-border"
+                }`}
+              >
+                {institute.onboarded ? "Onboarded" : "Not Onboarded"}
               </span>
               <button
-                onClick={() => setEditingOnboarded(true)}
-                title="Edit onboarded status"
+                onClick={() => setEditingProfile(true)}
+                title="Edit institute profile"
                 className="p-1.5 text-muted hover:text-primary hover:bg-primary-faint rounded-lg transition-colors"
               >
                 <Pencil className="w-3.5 h-3.5" />
               </button>
             </div>
-          ) : (
-            <div className="flex items-center gap-2 shrink-0">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={institute.onboarded}
-                  disabled={togglingOnboarded}
-                  onChange={(e) => toggleOnboarded(e.target.checked)}
-                  className="w-4 h-4 accent-teal-600 disabled:opacity-40"
-                />
-                <span
-                  className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${
-                    institute.onboarded ? "text-teal-600 bg-teal-50" : "text-muted bg-background border border-border"
-                  }`}
-                >
-                  {institute.onboarded ? "Onboarded" : "Not Onboarded"}
-                </span>
-              </label>
-              {institute.onboarded && (
-                <button
-                  onClick={() => setEditingOnboarded(false)}
-                  className="text-[11px] font-semibold text-muted hover:text-foreground"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
           )}
         </div>
 
-        <div className="flex items-end gap-3 mt-4 pt-4 border-t border-border">
-          <Field label="Short name" hint="Shown across the app and portal instead of the full name">
-            {editingShortName ? (
+        {editingProfile && (
+          <div className="flex items-end gap-3 mt-4 pt-4 border-t border-border flex-wrap">
+            <Field label="Short name" hint="Shown across the app and portal instead of the full name">
               <input
                 type="text"
                 value={shortName}
@@ -306,37 +298,38 @@ export default function InstituteDetailPage() {
                 autoFocus
                 className={`${INPUT} w-40`}
               />
-            ) : (
-              <div className="h-[34px] flex items-center text-[14px] font-semibold text-foreground">
-                {institute.shortName}
-              </div>
-            )}
-          </Field>
-          {editingShortName ? (
+            </Field>
+            <Field label="Onboarded" hint="Set once the institute's Student Cell has actually started using the portal">
+              <label className="h-[34px] flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={onboardedDraft}
+                  onChange={(e) => setOnboardedDraft(e.target.checked)}
+                  className="w-4 h-4 accent-teal-600"
+                />
+                <span className="text-[13px] font-semibold text-foreground">
+                  {onboardedDraft ? "Onboarded" : "Not Onboarded"}
+                </span>
+              </label>
+            </Field>
             <div className="flex items-center gap-3 pb-2">
-              {shortNameDirty && (
+              {profileDirty && (
                 <button
-                  onClick={saveShortName}
-                  disabled={savingShortName}
+                  onClick={saveProfile}
+                  disabled={savingProfile}
                   className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
                 >
-                  {savingShortName ? "Saving…" : "Save"}
+                  {savingProfile ? "Saving…" : "Save"}
                 </button>
               )}
-              <button onClick={cancelEditShortName} className="text-[12px] font-semibold text-muted hover:text-foreground">
-                Cancel
-              </button>
+              {profileComplete && (
+                <button onClick={cancelEditProfile} className="text-[12px] font-semibold text-muted hover:text-foreground">
+                  Cancel
+                </button>
+              )}
             </div>
-          ) : (
-            <button
-              onClick={() => setEditingShortName(true)}
-              title="Edit short name"
-              className="p-1.5 mb-1 text-muted hover:text-primary hover:bg-primary-faint rounded-lg transition-colors"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Stats */}
@@ -433,6 +426,17 @@ export default function InstituteDetailPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
+                          {admin.active && (
+                            <button
+                              onClick={() => logInAs(admin)}
+                              disabled={impersonating === admin.id}
+                              title={`Log in as ${admin.displayName}'s Student Cell portal`}
+                              className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold text-primary bg-gold-faint hover:bg-gold/25 rounded-lg transition-colors disabled:opacity-50 shrink-0"
+                            >
+                              <LogIn className="w-3.5 h-3.5" />
+                              {impersonating === admin.id ? "Logging in…" : "Log in as"}
+                            </button>
+                          )}
                           <button
                             onClick={() => setAdminDialog({ kind: "edit", admin })}
                             className="px-2.5 py-1.5 text-[12px] font-semibold text-primary hover:bg-primary-faint rounded-lg transition-colors"
@@ -516,6 +520,68 @@ export default function InstituteDetailPage() {
         <PasswordForm admin={adminDialog.admin} onClose={() => setAdminDialog(null)} onSaved={() => setAdminDialog(null)} />
       )}
     </div>
+  );
+}
+
+function InstituteLogo({
+  institute,
+  onUploaded,
+}: {
+  institute: Institute;
+  onUploaded: (updated: Institute) => void;
+}) {
+  const { toast } = useToast();
+  const [uploading, setUploading] = useState(false);
+  const inputId = `institute-logo-${institute.instituteCode}`;
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const updated = await uploadInstituteLogo(institute.instituteCode, file);
+      onUploaded(updated);
+      toast("Logo updated", "success");
+    } catch (err) {
+      toast(`Failed to upload logo: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <label
+      htmlFor={inputId}
+      title="Click to upload the institute logo"
+      className="group relative w-14 h-14 rounded-2xl bg-primary-faint text-primary flex items-center justify-center shrink-0 overflow-hidden cursor-pointer"
+    >
+      {institute.logoUrl ? (
+        <AuthedImage
+          fileUrl={`${institute.logoUrl}?v=${encodeURIComponent(institute.updatedAt)}`}
+          alt={`${institute.instituteName} logo`}
+          className="w-full h-full object-cover"
+          fallbackClassName="w-14 h-14"
+        />
+      ) : (
+        <Landmark className="w-6 h-6" />
+      )}
+      <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+        {uploading ? (
+          <span className="text-white text-[10px] font-bold">…</span>
+        ) : (
+          <Camera className="w-4 h-4 text-white" />
+        )}
+      </div>
+      <input
+        id={inputId}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        disabled={uploading}
+        onChange={handleFile}
+      />
+    </label>
   );
 }
 

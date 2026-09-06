@@ -209,7 +209,6 @@ export default function InstitutesPage() {
               <thead>
                 <tr className="bg-primary-faint">
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Code</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Short Name</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Full Name</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Students</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Teachers</th>
@@ -240,10 +239,10 @@ export default function InstitutesPage() {
                     }`}
                   >
                     <td className="px-4 py-3 font-mono text-[13px]">{institute.instituteCode}</td>
-                    <td className="px-4 py-3">{institute.shortName || <span className="text-muted">—</span>}</td>
                     <td className="px-4 py-3">
                       <span className={`font-semibold ${institute.onboarded ? "text-teal-700" : "text-foreground"}`}>
                         {institute.instituteName}
+                        {institute.shortName && <span className="font-normal text-muted"> ({institute.shortName})</span>}
                       </span>
                     </td>
                     <td className="px-4 py-3 tabular-nums">{studentCounts.get(institute.instituteCode) ?? 0}</td>

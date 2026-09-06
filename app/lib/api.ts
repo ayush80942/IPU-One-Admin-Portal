@@ -256,6 +256,8 @@ export interface Institute {
   instituteName: string;
   shortName: string | null;
   onboarded: boolean;
+  /** Null until an admin uploads one; otherwise an admin-authenticated path (see AuthedImage). */
+  logoUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -588,6 +590,17 @@ export async function updateInstitute(instituteCode: string, update: InstituteUp
     body: JSON.stringify(update),
   });
   if (!res.ok) throw new Error(`Failed to update institute: ${res.status}`);
+  return res.json();
+}
+
+export async function uploadInstituteLogo(instituteCode: string, file: File): Promise<Institute> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await apiFetch(`${API_BASE}/api/admin/institutes/${encodeURIComponent(instituteCode)}/logo`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to upload logo: ${res.status}`));
   return res.json();
 }
 
