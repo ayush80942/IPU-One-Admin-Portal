@@ -376,6 +376,7 @@ function EditTeacherForm({ teacher, onSaved }: { teacher: TeacherDto; onSaved: (
   const [name, setName] = useState(teacher.name);
   const [title, setTitle] = useState(teacher.title ?? "");
   const [active, setActive] = useState(teacher.active);
+  const [facultyCode, setFacultyCode] = useState(teacher.facultyCode ?? "");
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -385,7 +386,12 @@ function EditTeacherForm({ teacher, onSaved }: { teacher: TeacherDto; onSaved: (
     }
     setSubmitting(true);
     try {
-      await updateTeacher(teacher.id, { name: name.trim(), title: title.trim() || null, active });
+      await updateTeacher(teacher.id, {
+        name: name.trim(),
+        title: title.trim() || null,
+        active,
+        facultyCode: facultyCode.trim() || null,
+      });
       toast("Teacher updated");
       onSaved();
     } catch (err) {
@@ -397,13 +403,11 @@ function EditTeacherForm({ teacher, onSaved }: { teacher: TeacherDto; onSaved: (
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      {/* Faculty code and institute are set once at creation and aren't editable here — moving a
-          teacher between institutes or renumbering their faculty code isn't something this form
-          supports; re-add the account under the right institute instead. */}
-      <div className="grid grid-cols-2 gap-4">
-        <DetailField label="Faculty Code" value={teacher.facultyCode} />
-        <DetailField label="Institute" value={teacher.instituteCode} />
-      </div>
+      {/* Institute is set once at creation and isn't editable here — moving a teacher between
+          institutes isn't something this form supports; re-add the account under the right
+          institute instead. Faculty code, unlike institute, is correctable: an imported row can
+          carry the wrong value and there's no other way to fix it after the fact. */}
+      <DetailField label="Institute" value={teacher.instituteCode} />
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="Title">
@@ -413,6 +417,10 @@ function EditTeacherForm({ teacher, onSaved }: { teacher: TeacherDto; onSaved: (
           <input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
         </Field>
       </div>
+
+      <Field label="Faculty Code">
+        <input value={facultyCode} onChange={(e) => setFacultyCode(e.target.value)} placeholder="Optional" className={inputClass} />
+      </Field>
 
       <label className="flex items-center gap-2 text-[13px] text-foreground">
         <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="w-4 h-4" />

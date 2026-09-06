@@ -1301,6 +1301,8 @@ export interface UpdateTeacherRequest {
   name: string;
   title: string | null;
   active: boolean;
+  /** Corrects a wrong or missing code after creation — institute stays fixed, but this doesn't. */
+  facultyCode?: string | null;
 }
 
 export async function fetchTeachers(): Promise<TeacherDto[]> {
