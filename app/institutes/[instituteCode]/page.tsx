@@ -719,7 +719,7 @@ function CoursesTable({
             <th className="px-6 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Code</th>
             <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Program</th>
             <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Short Name</th>
-            <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Total Semesters</th>
+            <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">SEMS</th>
             <th className="px-4 py-3 w-40" />
           </tr>
         </thead>

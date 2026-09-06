@@ -29,6 +29,30 @@ import {
 // batch divides serially by roll number, so membership itself is chosen by each student in the
 // app, not assigned from a range configured on this page.
 
+/** Everything about the course itself, shown atop the expanded row so picking a batch year doesn't lose the program's own identity behind a narrow "sections" view. */
+function CourseSummary({ course }: { course: Course }) {
+  return (
+    <div className="mb-4 pb-4 border-b border-border">
+      <div className="text-[13.5px] font-bold text-foreground">{course.programName}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 mt-2.5 text-[12.5px]">
+        <SummaryField label="Program Code" value={course.programCode} mono />
+        <SummaryField label="Short Name" value={course.shortName ?? "—"} />
+        <SummaryField label="SEMS" value={course.totalSemesters ?? "—"} />
+        <SummaryField label="Institute" value={course.instituteName ?? course.instituteCode ?? "—"} />
+      </div>
+    </div>
+  );
+}
+
+function SummaryField({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
+  return (
+    <div>
+      <span className="block text-[10px] font-bold text-muted uppercase tracking-wide">{label}</span>
+      <span className={`font-semibold text-foreground ${mono ? "font-mono" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
 export function BatchYearSelect({
   course,
   sections,
@@ -136,6 +160,8 @@ export function BatchYearSectionsPanel({
 
   return (
     <div>
+      <CourseSummary course={course} />
+
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-[12.5px] font-bold text-primary">
           {course.shortName || course.programCode} · Batch {batchYear} — Sections
