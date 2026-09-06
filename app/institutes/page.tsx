@@ -16,6 +16,8 @@ import {
   fetchCourses,
   fetchAdmins,
   deleteAdmin,
+  fetchStudents,
+  fetchTeachers,
   type Institute,
   type Course,
   type AdminUser,
@@ -35,6 +37,8 @@ export default function InstitutesPage() {
   const [institutes, setInstitutes] = useState<Institute[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [studentCounts, setStudentCounts] = useState<Map<string, number>>(new Map());
+  const [teacherCounts, setTeacherCounts] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [addingInstitute, setAddingInstitute] = useState(false);
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
@@ -42,14 +46,32 @@ export default function InstitutesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [institutesData, coursesData, adminsData] = await Promise.all([
+      const [institutesData, coursesData, adminsData, studentsData, teachersData] = await Promise.all([
         fetchInstitutes(),
         fetchCourses(),
         fetchAdmins(),
+        fetchStudents(),
+        fetchTeachers(),
       ]);
       setInstitutes(institutesData);
       setCourses(coursesData);
       setAdmins(adminsData);
+
+      // Excludes alumni, matching the Students page's own primary listing - they've moved to
+      // their own section there, so counting them here would overstate who's actually enrolled.
+      const students = new Map<string, number>();
+      for (const s of studentsData) {
+        if (!s.instituteCode || s.alumniStatus) continue;
+        students.set(s.instituteCode, (students.get(s.instituteCode) ?? 0) + 1);
+      }
+      setStudentCounts(students);
+
+      const teachers = new Map<string, number>();
+      for (const t of teachersData) {
+        if (!t.instituteCode) continue;
+        teachers.set(t.instituteCode, (teachers.get(t.instituteCode) ?? 0) + 1);
+      }
+      setTeacherCounts(teachers);
     } catch (err) {
       toast(`Failed to load: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
@@ -84,8 +106,12 @@ export default function InstitutesPage() {
   const superAdmins = useMemo(() => admins.filter((a) => a.role === "SUPER_ADMIN"), [admins]);
 
   const sortedInstitutes = useMemo(
-    () => [...institutes].sort((a, b) => a.instituteName.localeCompare(b.instituteName)),
-    [institutes]
+    () =>
+      [...institutes].sort((a, b) => {
+        const diff = (studentCounts.get(b.instituteCode) ?? 0) - (studentCounts.get(a.instituteCode) ?? 0);
+        return diff !== 0 ? diff : a.instituteName.localeCompare(b.instituteName);
+      }),
+    [institutes, studentCounts]
   );
 
   const institutesMissingShortName = institutes.filter((i) => !i.shortName).length;
@@ -183,8 +209,10 @@ export default function InstitutesPage() {
               <thead>
                 <tr className="bg-primary-faint">
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Code</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Name</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Onboarded</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Short Name</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Full Name</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Students</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Teachers</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Courses</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Admins</th>
                   <th className="px-4 py-3 w-8" />
@@ -203,23 +231,23 @@ export default function InstitutesPage() {
                     }}
                     tabIndex={0}
                     role="button"
-                    aria-label={`View details for ${institute.instituteName}`}
-                    className="group hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer focus:outline-none focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+                    aria-label={`View details for ${institute.instituteName}${institute.onboarded ? " (onboarded)" : ""}`}
+                    title={institute.onboarded ? "Onboarded" : undefined}
+                    className={`group transition-colors border-b border-border last:border-b-0 cursor-pointer focus:outline-none focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset ${
+                      institute.onboarded
+                        ? "border-l-4 border-l-teal-500 bg-teal-50/40 hover:bg-teal-50/70"
+                        : "hover:bg-background"
+                    }`}
                   >
                     <td className="px-4 py-3 font-mono text-[13px]">{institute.instituteCode}</td>
+                    <td className="px-4 py-3">{institute.shortName || <span className="text-muted">—</span>}</td>
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-foreground">{institute.instituteName}</div>
-                      {institute.shortName && (
-                        <div className="text-[11px] text-muted mt-0.5">{institute.shortName}</div>
-                      )}
+                      <span className={`font-semibold ${institute.onboarded ? "text-teal-700" : "text-foreground"}`}>
+                        {institute.instituteName}
+                      </span>
                     </td>
-                    <td className="px-4 py-3">
-                      {institute.onboarded ? (
-                        <Pill color="text-teal" colorFaint="bg-teal-faint">Onboarded</Pill>
-                      ) : (
-                        <span className="text-muted text-[12px]">—</span>
-                      )}
-                    </td>
+                    <td className="px-4 py-3 tabular-nums">{studentCounts.get(institute.instituteCode) ?? 0}</td>
+                    <td className="px-4 py-3 tabular-nums">{teacherCounts.get(institute.instituteCode) ?? 0}</td>
                     <td className="px-4 py-3 tabular-nums">{courseCountByInstitute.get(institute.instituteCode) ?? 0}</td>
                     <td className="px-4 py-3 tabular-nums">{adminCountByInstitute.get(institute.instituteCode) ?? 0}</td>
                     <td className="px-4 py-3">

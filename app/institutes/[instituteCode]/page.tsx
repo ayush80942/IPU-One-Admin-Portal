@@ -7,6 +7,7 @@ import {
   GraduationCap,
   KeyRound,
   Landmark,
+  Pencil,
   Plus,
   ShieldCheck,
   ToggleLeft,
@@ -64,7 +65,13 @@ export default function InstituteDetailPage() {
 
   const [shortName, setShortName] = useState("");
   const [savingShortName, setSavingShortName] = useState(false);
+  // Locked (read-only) once a value already exists - a short name or an onboarded=true is
+  // essentially a one-time, life-of-the-institute fact, so accidental edits are worth guarding
+  // against. The Edit button unlocks it; saving (or toggling onboarded back off) re-locks
+  // automatically once the field has a value again.
+  const [editingShortName, setEditingShortName] = useState(false);
   const [togglingOnboarded, setTogglingOnboarded] = useState(false);
+  const [editingOnboarded, setEditingOnboarded] = useState(false);
   const [addingCourse, setAddingCourse] = useState(false);
   const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
   const [pendingFeature, setPendingFeature] = useState<StudentFeature | null>(null);
@@ -88,6 +95,8 @@ export default function InstituteDetailPage() {
 
       const found = institutesData.find((i) => i.instituteCode === instituteCode);
       setShortName(found?.shortName ?? "");
+      setEditingShortName(!found?.shortName);
+      setEditingOnboarded(!found?.onboarded);
       if (!found) setLoadError("Institute not found");
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Unknown error");
@@ -124,6 +133,7 @@ export default function InstituteDetailPage() {
         shortName: shortName.trim() === "" ? null : shortName.trim(),
       });
       setInstitutes((prev) => prev.map((i) => (i.instituteCode === updated.instituteCode ? updated : i)));
+      setEditingShortName(!updated.shortName);
       toast("Institute updated", "success");
     } catch (err) {
       toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
@@ -132,12 +142,18 @@ export default function InstituteDetailPage() {
     }
   };
 
+  const cancelEditShortName = () => {
+    setShortName(institute?.shortName ?? "");
+    setEditingShortName(false);
+  };
+
   const toggleOnboarded = async (checked: boolean) => {
     if (!institute) return;
     setTogglingOnboarded(true);
     try {
       const updated = await updateInstitute(institute.instituteCode, { onboarded: checked });
       setInstitutes((prev) => prev.map((i) => (i.instituteCode === updated.instituteCode ? updated : i)));
+      setEditingOnboarded(!updated.onboarded);
       toast(checked ? "Marked as onboarded" : "Marked as not onboarded", "success");
     } catch (err) {
       toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
@@ -233,43 +249,91 @@ export default function InstituteDetailPage() {
             </div>
           </div>
 
-          {/* Top-right onboarded flag - also the toggle, since this whole page is already
-              super-admin-only (see nav.ts's superOnly on /institutes). */}
-          <label className="flex items-center gap-2 shrink-0 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={institute.onboarded}
-              disabled={togglingOnboarded}
-              onChange={(e) => toggleOnboarded(e.target.checked)}
-              className="w-4 h-4 accent-teal-600 disabled:opacity-40"
-            />
-            <span
-              className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${
-                institute.onboarded ? "text-teal-600 bg-teal-50" : "text-muted bg-background border border-border"
-              }`}
-            >
-              {institute.onboarded ? "Onboarded" : "Not Onboarded"}
-            </span>
-          </label>
+          {/* Top-right onboarded flag - locked read-only once true (a one-time, life-of-the-
+              institute fact), same reasoning as the short name below. Not yet onboarded stays
+              freely toggleable, since there's nothing settled to protect yet. */}
+          {institute.onboarded && !editingOnboarded ? (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[12px] font-bold px-2.5 py-1 rounded-full text-teal-600 bg-teal-50">
+                Onboarded
+              </span>
+              <button
+                onClick={() => setEditingOnboarded(true)}
+                title="Edit onboarded status"
+                className="p-1.5 text-muted hover:text-primary hover:bg-primary-faint rounded-lg transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 shrink-0">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={institute.onboarded}
+                  disabled={togglingOnboarded}
+                  onChange={(e) => toggleOnboarded(e.target.checked)}
+                  className="w-4 h-4 accent-teal-600 disabled:opacity-40"
+                />
+                <span
+                  className={`text-[12px] font-bold px-2.5 py-1 rounded-full ${
+                    institute.onboarded ? "text-teal-600 bg-teal-50" : "text-muted bg-background border border-border"
+                  }`}
+                >
+                  {institute.onboarded ? "Onboarded" : "Not Onboarded"}
+                </span>
+              </label>
+              {institute.onboarded && (
+                <button
+                  onClick={() => setEditingOnboarded(false)}
+                  className="text-[11px] font-semibold text-muted hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-end gap-3 mt-4 pt-4 border-t border-border">
           <Field label="Short name" hint="Shown across the app and portal instead of the full name">
-            <input
-              type="text"
-              value={shortName}
-              onChange={(e) => setShortName(e.target.value)}
-              placeholder="e.g. USAR"
-              className={`${INPUT} w-40`}
-            />
+            {editingShortName ? (
+              <input
+                type="text"
+                value={shortName}
+                onChange={(e) => setShortName(e.target.value)}
+                placeholder="e.g. USAR"
+                autoFocus
+                className={`${INPUT} w-40`}
+              />
+            ) : (
+              <div className="h-[34px] flex items-center text-[14px] font-semibold text-foreground">
+                {institute.shortName}
+              </div>
+            )}
           </Field>
-          {shortNameDirty && (
+          {editingShortName ? (
+            <div className="flex items-center gap-3 pb-2">
+              {shortNameDirty && (
+                <button
+                  onClick={saveShortName}
+                  disabled={savingShortName}
+                  className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
+                >
+                  {savingShortName ? "Saving…" : "Save"}
+                </button>
+              )}
+              <button onClick={cancelEditShortName} className="text-[12px] font-semibold text-muted hover:text-foreground">
+                Cancel
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={saveShortName}
-              disabled={savingShortName}
-              className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50 pb-2"
+              onClick={() => setEditingShortName(true)}
+              title="Edit short name"
+              className="p-1.5 mb-1 text-muted hover:text-primary hover:bg-primary-faint rounded-lg transition-colors"
             >
-              {savingShortName ? "Saving…" : "Save"}
+              <Pencil className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
@@ -587,6 +651,11 @@ function CourseRow({
   const [shortName, setShortName] = useState(course.shortName ?? "");
   const [totalSemesters, setTotalSemesters] = useState(course.totalSemesters?.toString() ?? "");
   const [saving, setSaving] = useState(false);
+  const isComplete = (c: Course) => Boolean(c.shortName) && c.totalSemesters != null;
+  // Locked once both fields are already filled in - same one-time-fact reasoning as the
+  // institute's own short name/onboarded flag. A partially-filled row (e.g. short name set but
+  // semesters still missing) stays open so there's nothing extra to click through to finish it.
+  const [editing, setEditing] = useState(!isComplete(course));
 
   const dirty =
     shortName !== (course.shortName ?? "") ||
@@ -600,6 +669,7 @@ function CourseRow({
         totalSemesters: totalSemesters.trim() === "" ? null : Number(totalSemesters),
       });
       onSaved(updated);
+      setEditing(!isComplete(updated));
       toast("Course updated", "success");
     } catch (err) {
       toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
@@ -608,37 +678,68 @@ function CourseRow({
     }
   };
 
+  const cancel = () => {
+    setShortName(course.shortName ?? "");
+    setTotalSemesters(course.totalSemesters?.toString() ?? "");
+    setEditing(false);
+  };
+
   return (
     <tr className="hover:bg-background transition-colors border-b border-border last:border-b-0 bg-surface">
       <td className="px-6 py-3 font-mono text-[13px]">{course.programCode}</td>
       <td className="px-4 py-3 font-semibold">{course.programName}</td>
       <td className="px-4 py-3">
-        <input
-          type="text"
-          value={shortName}
-          onChange={(e) => setShortName(e.target.value)}
-          placeholder="e.g. B.Tech AI&DS"
-          className={`${INPUT} w-full`}
-        />
+        {editing ? (
+          <input
+            type="text"
+            value={shortName}
+            onChange={(e) => setShortName(e.target.value)}
+            placeholder="e.g. B.Tech AI&DS"
+            className={`${INPUT} w-full`}
+          />
+        ) : (
+          course.shortName
+        )}
       </td>
       <td className="px-4 py-3">
-        <input
-          type="number"
-          min={1}
-          value={totalSemesters}
-          onChange={(e) => setTotalSemesters(e.target.value)}
-          placeholder="—"
-          className={`${INPUT} w-20`}
-        />
+        {editing ? (
+          <input
+            type="number"
+            min={1}
+            value={totalSemesters}
+            onChange={(e) => setTotalSemesters(e.target.value)}
+            placeholder="—"
+            className={`${INPUT} w-20`}
+          />
+        ) : (
+          course.totalSemesters
+        )}
       </td>
       <td className="px-4 py-3">
-        {dirty && (
+        {editing ? (
+          <div className="flex items-center gap-2">
+            {dirty && (
+              <button
+                onClick={save}
+                disabled={saving}
+                className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            )}
+            {isComplete(course) && (
+              <button onClick={cancel} className="text-[12px] font-semibold text-muted hover:text-foreground">
+                Cancel
+              </button>
+            )}
+          </div>
+        ) : (
           <button
-            onClick={save}
-            disabled={saving}
-            className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
+            onClick={() => setEditing(true)}
+            title="Edit this course"
+            className="p-1.5 text-muted hover:text-primary hover:bg-primary-faint rounded-lg transition-colors"
           >
-            {saving ? "Saving…" : "Save"}
+            <Pencil className="w-3.5 h-3.5" />
           </button>
         )}
       </td>
