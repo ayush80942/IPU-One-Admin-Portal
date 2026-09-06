@@ -1364,7 +1364,9 @@ export async function searchSubjectCatalog(search?: string): Promise<SubjectCata
   return res.json();
 }
 
-/** Flat admin-facing shape — institute/program as codes, not linked entities. */
+/** Flat admin-facing shape — institute/program as codes, not linked entities. `sectionId`/`groupId`
+ *  are null when the offering applies to the whole batch (the common case) rather than one
+ *  section/lab-group subdivision — see Section/LabGroup further down. */
 export interface TeachingOfferingDto {
   id: string;
   subjectCode: string;
@@ -1379,6 +1381,10 @@ export interface TeachingOfferingDto {
   academicTerm: string;
   isElective: boolean | null;
   active: boolean;
+  sectionId: string | null;
+  sectionName: string | null;
+  groupId: string | null;
+  groupName: string | null;
 }
 
 export interface CreateTeachingOfferingRequest {
@@ -1392,6 +1398,8 @@ export interface CreateTeachingOfferingRequest {
   semesterNumber: number | null;
   academicTerm: string;
   isElective: boolean;
+  sectionId?: string | null;
+  groupId?: string | null;
 }
 
 /** Institute/program/batchYear/academicTerm are fixed at creation and not sent here. */
@@ -1403,6 +1411,8 @@ export interface UpdateTeachingOfferingRequest {
   semesterNumber: number | null;
   isElective: boolean;
   active: boolean;
+  sectionId?: string | null;
+  groupId?: string | null;
 }
 
 export interface FeedbackWindowDto {
@@ -1570,4 +1580,199 @@ export async function fetchFeedbackAnalyticsCsv(academicTerm?: string, programCo
   const res = await apiFetch(`${API_BASE}/api/admin/feedback/analytics/export${qs ? `?${qs}` : ""}`);
   if (!res.ok) throw new Error(await errorMessage(res, `Failed to export analytics: ${res.status}`));
   return res.blob();
+}
+
+// ---------------------------------------------------------------------------
+// Sections & Lab Groups — a cohort subdivision (e.g. "B1") within one
+// institute+programme+batch year, and the lab sub-split within it (e.g. "A").
+// Membership is deterministic from the enrollment number's serial digits, not
+// an uploaded roster — see SectionResolutionService on the backend. Reads/
+// writes are narrowed server-side to the caller's own institute(s).
+// ---------------------------------------------------------------------------
+
+export interface SectionDto {
+  id: string;
+  instituteCode: string;
+  programCode: string;
+  batchYear: number;
+  sectionName: string;
+  serialRangeStart: number;
+  serialRangeEnd: number;
+}
+
+export interface CreateSectionRequest {
+  instituteCode: string;
+  programCode: string;
+  batchYear: number;
+  sectionName: string;
+  serialRangeStart: number;
+  serialRangeEnd: number;
+}
+
+export interface UpdateSectionRequest {
+  sectionName: string;
+  serialRangeStart: number;
+  serialRangeEnd: number;
+}
+
+export interface LabGroupDto {
+  id: string;
+  sectionId: string;
+  groupName: string;
+  serialRangeStart: number;
+  serialRangeEnd: number;
+}
+
+export interface CreateLabGroupRequest {
+  groupName: string;
+  serialRangeStart: number;
+  serialRangeEnd: number;
+}
+
+export interface UpdateLabGroupRequest {
+  groupName: string;
+  serialRangeStart: number;
+  serialRangeEnd: number;
+}
+
+export async function fetchSections(): Promise<SectionDto[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/sections`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch sections: ${res.status}`));
+  return res.json();
+}
+
+export async function createSection(request: CreateSectionRequest): Promise<SectionDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/sections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to create section: ${res.status}`));
+  return res.json();
+}
+
+export async function updateSection(id: string, request: UpdateSectionRequest): Promise<SectionDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/sections/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update section: ${res.status}`));
+  return res.json();
+}
+
+export async function deleteSection(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/admin/sections/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete section: ${res.status}`));
+}
+
+export async function fetchLabGroups(sectionId: string): Promise<LabGroupDto[]> {
+  const res = await apiFetch(`${API_BASE}/api/admin/sections/${sectionId}/groups`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch lab groups: ${res.status}`));
+  return res.json();
+}
+
+export async function createLabGroup(sectionId: string, request: CreateLabGroupRequest): Promise<LabGroupDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/sections/${sectionId}/groups`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to create lab group: ${res.status}`));
+  return res.json();
+}
+
+export async function updateLabGroup(groupId: string, request: UpdateLabGroupRequest): Promise<LabGroupDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/sections/groups/${groupId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update lab group: ${res.status}`));
+  return res.json();
+}
+
+export async function deleteLabGroup(groupId: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/admin/sections/groups/${groupId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete lab group: ${res.status}`));
+}
+
+// ---------------------------------------------------------------------------
+// Timetable slots — the calendar projection of a teaching offering (day/time/
+// room). Whether a slot is a lecture or a lab is already determined by the
+// offering's subject type (see FeedbackSubjectType above), so there is
+// deliberately no separate session-type field here. Reads/writes are narrowed
+// server-side to the caller's own institute(s).
+// ---------------------------------------------------------------------------
+
+export type TimetableDayOfWeek = "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY" | "SUNDAY";
+
+export const DAYS_OF_WEEK: TimetableDayOfWeek[] = [
+  "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY",
+];
+
+/** Flat, display-ready shape — subject/teacher/section/group are resolved server-side, not just
+ *  IDs, so the client never needs a second round trip to show a slot. `startTime`/`endTime` are
+ *  "HH:mm:ss" (or "HH:mm") strings, compatible with an `<input type="time">` value directly. */
+export interface TimetableSlotDto {
+  id: string;
+  offeringId: string;
+  subjectCode: string;
+  subjectName: string;
+  subjectType: FeedbackSubjectType;
+  teacherName: string;
+  sectionName: string | null;
+  groupName: string | null;
+  dayOfWeek: TimetableDayOfWeek;
+  startTime: string;
+  endTime: string;
+  room: string;
+}
+
+export interface CreateTimetableSlotRequest {
+  offeringId: string;
+  dayOfWeek: TimetableDayOfWeek;
+  startTime: string;
+  endTime: string;
+  room: string;
+}
+
+export interface UpdateTimetableSlotRequest {
+  dayOfWeek: TimetableDayOfWeek;
+  startTime: string;
+  endTime: string;
+  room: string;
+}
+
+/** Omitting `offeringId` returns every slot in scope — used for the "all classes this week" view. */
+export async function fetchTimetableSlots(offeringId?: string): Promise<TimetableSlotDto[]> {
+  const qs = offeringId ? `?offeringId=${encodeURIComponent(offeringId)}` : "";
+  const res = await apiFetch(`${API_BASE}/api/admin/timetable/slots${qs}`);
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to fetch timetable slots: ${res.status}`));
+  return res.json();
+}
+
+export async function createTimetableSlot(request: CreateTimetableSlotRequest): Promise<TimetableSlotDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/timetable/slots`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to create timetable slot: ${res.status}`));
+  return res.json();
+}
+
+export async function updateTimetableSlot(id: string, request: UpdateTimetableSlotRequest): Promise<TimetableSlotDto> {
+  const res = await apiFetch(`${API_BASE}/api/admin/timetable/slots/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to update timetable slot: ${res.status}`));
+  return res.json();
+}
+
+export async function deleteTimetableSlot(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/admin/timetable/slots/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorMessage(res, `Failed to delete timetable slot: ${res.status}`));
 }

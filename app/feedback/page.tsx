@@ -35,6 +35,8 @@ import {
   fetchTeachers,
   createTeacher,
   searchSubjectCatalog,
+  fetchSections,
+  fetchLabGroups,
   TeachingOfferingDto,
   FeedbackWindowDto,
   FeedbackQuestionDto,
@@ -44,6 +46,8 @@ import {
   Institute,
   Course,
   TeacherDto,
+  SectionDto,
+  LabGroupDto,
 } from "../lib/api";
 import { instituteOptionsFrom, programOptionsFrom, BATCH_YEAR_OPTIONS } from "../lib/noticeTaxonomy";
 import Combobox, { ComboboxOption } from "../components/Combobox";
@@ -67,6 +71,7 @@ export default function FeedbackPage() {
   const [institutes, setInstitutes] = useState<Institute[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [teachers, setTeachers] = useState<TeacherDto[]>([]);
+  const [sections, setSections] = useState<SectionDto[]>([]);
   const [offerings, setOfferings] = useState<TeachingOfferingDto[]>([]);
   const [windows, setWindows] = useState<FeedbackWindowDto[]>([]);
   const [analytics, setAnalytics] = useState<FeedbackAnalyticsDto>({ offerings: [] });
@@ -81,10 +86,11 @@ export default function FeedbackPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [institutesData, coursesData, teachersData, offeringsData, windowsData, analyticsData] = await Promise.all([
+      const [institutesData, coursesData, teachersData, sectionsData, offeringsData, windowsData, analyticsData] = await Promise.all([
         fetchInstitutes(),
         fetchCourses(),
         fetchTeachers(),
+        fetchSections(),
         fetchFeedbackOfferings(),
         fetchFeedbackWindows(),
         fetchFeedbackAnalytics(),
@@ -92,6 +98,7 @@ export default function FeedbackPage() {
       setInstitutes(institutesData);
       setCourses(coursesData);
       setTeachers(teachersData);
+      setSections(sectionsData);
       setOfferings(offeringsData);
       setWindows(windowsData);
       setAnalytics(analyticsData);
@@ -171,6 +178,7 @@ export default function FeedbackPage() {
           institutes={institutes}
           courses={courses}
           teachers={teachers}
+          sections={sections}
           lockedInstituteCodes={lockedInstituteCodes}
           loading={loading}
           onChanged={load}
@@ -202,6 +210,7 @@ function OfferingsSection({
   institutes,
   courses,
   teachers,
+  sections,
   lockedInstituteCodes,
   loading,
   onChanged,
@@ -210,6 +219,7 @@ function OfferingsSection({
   institutes: Institute[];
   courses: Course[];
   teachers: TeacherDto[];
+  sections: SectionDto[];
   lockedInstituteCodes: string[] | null;
   loading: boolean;
   onChanged: () => void;
@@ -292,6 +302,7 @@ function OfferingsSection({
             institutes={institutes}
             courses={courses}
             teachers={teachers}
+            sections={sections}
             lockedInstituteCodes={lockedInstituteCodes}
             onSaved={() => { setShowForm(false); onChanged(); }}
             onTeacherAdded={onChanged}
@@ -310,6 +321,7 @@ function OfferingsSection({
           <OfferingEditForm
             offering={selected}
             teachers={teachers.filter((t) => t.instituteCode === selected.instituteCode)}
+            sections={sections.filter((s) => s.instituteCode === selected.instituteCode && s.programCode === selected.programCode)}
             onSaved={(updated) => { setSelected(updated); onChanged(); }}
             onTeacherAdded={onChanged}
           />
@@ -331,6 +343,7 @@ function OfferingForm({
   institutes,
   courses,
   teachers,
+  sections,
   lockedInstituteCodes,
   onSaved,
   onTeacherAdded,
@@ -338,6 +351,7 @@ function OfferingForm({
   institutes: Institute[];
   courses: Course[];
   teachers: TeacherDto[];
+  sections: SectionDto[];
   lockedInstituteCodes: string[] | null;
   onSaved: () => void;
   onTeacherAdded: () => void;
@@ -377,6 +391,16 @@ function OfferingForm({
   const [academicTerm, setAcademicTerm] = useState("");
   const [isElective, setIsElective] = useState(false);
 
+  // Optional — null means the offering applies to the whole batch, the common case. Only
+  // sections matching the chosen institute/program/batch year are offered.
+  const [sectionId, setSectionId] = useState("");
+  const [groupId, setGroupId] = useState("");
+  const [groups, setGroups] = useState<LabGroupDto[]>([]);
+  const matchingSections = useMemo(
+    () => sections.filter((s) => s.instituteCode === instituteCode && s.programCode === programCode && String(s.batchYear) === batchYear),
+    [sections, instituteCode, programCode, batchYear]
+  );
+
   useEffect(() => {
     setProgramCode((prev) => (programOptions.some((o) => o.value === prev) ? prev : programOptions[0]?.value ?? ""));
   }, [programOptions]);
@@ -386,6 +410,23 @@ function OfferingForm({
     setTeacherId("");
     setTeacherLabel("");
   }, [instituteCode]);
+
+  // A section picked under a different institute/program/batch no longer applies once those change.
+  useEffect(() => {
+    setSectionId("");
+    setGroupId("");
+    setGroups([]);
+  }, [instituteCode, programCode, batchYear]);
+
+  useEffect(() => {
+    if (!sectionId) {
+      setGroups([]);
+      setGroupId("");
+      return;
+    }
+    fetchLabGroups(sectionId).then(setGroups).catch(() => setGroups([]));
+    setGroupId("");
+  }, [sectionId]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -406,6 +447,8 @@ function OfferingForm({
         semesterNumber: semesterNumber ? Number(semesterNumber) : null,
         academicTerm: academicTerm.trim(),
         isElective,
+        sectionId: sectionId || null,
+        groupId: groupId || null,
       });
       toast("Teaching offering created");
       onSaved();
@@ -503,6 +546,20 @@ function OfferingForm({
       <Field label="Academic Term *" full>
         <input value={academicTerm} onChange={(e) => setAcademicTerm(e.target.value)} placeholder="e.g. 2025-26 Odd" className={inputClass} />
       </Field>
+
+      <Field label="Section">
+        <select value={sectionId} onChange={(e) => setSectionId(e.target.value)} className={selectClass}>
+          <option value="">Whole batch (no section)</option>
+          {matchingSections.map((s) => <option key={s.id} value={s.id}>{s.sectionName}</option>)}
+        </select>
+      </Field>
+      <Field label="Lab Group">
+        <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className={selectClass} disabled={!sectionId || groups.length === 0}>
+          <option value="">{sectionId ? "Whole section (no group)" : "Pick a section first"}</option>
+          {groups.map((g) => <option key={g.id} value={g.id}>{g.groupName}</option>)}
+        </select>
+      </Field>
+
       <label className="flex items-center gap-2 text-[13px] text-foreground col-span-2">
         <input type="checkbox" checked={isElective} onChange={(e) => setIsElective(e.target.checked)} className="w-4 h-4" />
         This is an elective subject (optional for students to rate)
@@ -588,11 +645,13 @@ function TeacherQuickAddForm({ instituteCode, onSaved }: { instituteCode: string
 function OfferingEditForm({
   offering,
   teachers,
+  sections,
   onSaved,
   onTeacherAdded,
 }: {
   offering: TeachingOfferingDto;
   teachers: TeacherDto[];
+  sections: SectionDto[];
   onSaved: (updated: TeachingOfferingDto) => void;
   onTeacherAdded: () => void;
 }) {
@@ -609,6 +668,24 @@ function OfferingEditForm({
   const [isElective, setIsElective] = useState(!!offering.isElective);
   const [active, setActive] = useState(offering.active);
 
+  const [sectionId, setSectionId] = useState(offering.sectionId ?? "");
+  const [groupId, setGroupId] = useState(offering.groupId ?? "");
+  const [groups, setGroups] = useState<LabGroupDto[]>([]);
+
+  useEffect(() => {
+    if (!sectionId) {
+      setGroups([]);
+      return;
+    }
+    fetchLabGroups(sectionId).then(setGroups).catch(() => setGroups([]));
+  }, [sectionId]);
+
+  // A group picked under a different section no longer applies once the section changes.
+  const handleSectionChange = (newSectionId: string) => {
+    setSectionId(newSectionId);
+    if (newSectionId !== offering.sectionId) setGroupId("");
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -621,6 +698,8 @@ function OfferingEditForm({
         semesterNumber: semesterNumber ? Number(semesterNumber) : null,
         isElective,
         active,
+        sectionId: sectionId || null,
+        groupId: groupId || null,
       });
       toast("Offering updated");
       onSaved(updated);
@@ -657,6 +736,18 @@ function OfferingEditForm({
         onCreateNew={{ label: "Add new teacher", onClick: () => setShowAddTeacher(true) }}
       />
       <Field label="Semester Number"><input type="number" min={1} max={12} value={semesterNumber} onChange={(e) => setSemesterNumber(e.target.value)} className={inputClass} /></Field>
+      <Field label="Section">
+        <select value={sectionId} onChange={(e) => handleSectionChange(e.target.value)} className={selectClass}>
+          <option value="">Whole batch (no section)</option>
+          {sections.map((s) => <option key={s.id} value={s.id}>{s.sectionName}</option>)}
+        </select>
+      </Field>
+      <Field label="Lab Group">
+        <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className={selectClass} disabled={!sectionId || groups.length === 0}>
+          <option value="">{sectionId ? "Whole section (no group)" : "Pick a section first"}</option>
+          {groups.map((g) => <option key={g.id} value={g.id}>{g.groupName}</option>)}
+        </select>
+      </Field>
       <div className="flex items-end gap-5 pb-1">
         <label className="flex items-center gap-2 text-[13px] text-foreground">
           <input type="checkbox" checked={isElective} onChange={(e) => setIsElective(e.target.checked)} className="w-4 h-4" />
