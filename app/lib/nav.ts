@@ -9,7 +9,6 @@ import {
   Landmark,
   Receipt,
   Calculator,
-  ShieldCheck,
   UserX,
   UserSearch,
   ToggleLeft,
@@ -68,10 +67,11 @@ export const NAV_ITEMS: NavItem[] = [
   // PortalStatusController's Javadoc on the backend.
   { href: "/portal-status", label: "Portal Status", icon: ActivitySquare },
   { href: "/credits", label: "Credits", icon: Calculator },
-  // Institutes and courses are one page with a view switch — a course cannot be created without
-  // naming its institute, so splitting them across two sidebar entries only made that awkward.
-  { href: "/institutes", label: "Institutes & Courses", icon: Landmark, superOnly: true },
-  { href: "/admins", label: "Admins", icon: ShieldCheck, superOnly: true },
+  // Institutes, their courses, and admin accounts (both this school's Student Cell accounts and,
+  // on the list page itself, Super Admins) all live under this one hierarchy now - a course can't
+  // be created without naming its institute, and only a super admin could ever reach any of this
+  // anyway, so there was nothing for splitting it across separate sidebar entries to protect.
+  { href: "/institutes", label: "Institutes", icon: Landmark, superOnly: true },
   { href: "/unlinked-users", label: "Unlinked Signups", icon: UserX, superOnly: true },
   // Cross-references unlinked-users, portal-status (PortalOutageAttempt) and support-tickets for
   // the same accounts, plus a manual triage status - same SUPER_ADMIN scope as unlinked-users

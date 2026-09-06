@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -13,13 +13,13 @@ import {
   Mail,
   Phone,
   Users as UsersIcon,
-  type LucideIcon,
 } from "lucide-react";
 import { useToast } from "../../components/Toast";
 import { useIsSuperAdmin } from "../../components/AuthGate";
 import StatTile from "../../components/StatTile";
 import Pill from "../../components/Pill";
 import EmptyState from "../../components/EmptyState";
+import SectionCard from "../../components/SectionCard";
 import { DetailField } from "../../components/DetailDialog";
 import { AuthedImage } from "../../components/AuthedFile";
 import FeeSubmissionDialog from "../../components/FeeSubmissionDialog";
@@ -64,26 +64,6 @@ function Avatar({ profileImage, name, size = 88 }: { profileImage: string | null
       className="rounded-full bg-primary-faint text-primary flex items-center justify-center font-bold shrink-0"
     >
       {(name || "?").trim().charAt(0).toUpperCase()}
-    </div>
-  );
-}
-
-function SectionCard({ title, icon: Icon, action, children }: {
-  title: string;
-  icon: LucideIcon;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3">
-        <h2 className="text-[15px] font-bold text-primary flex items-center gap-2">
-          <Icon className="w-4 h-4" />
-          {title}
-        </h2>
-        {action}
-      </div>
-      <div className="p-6">{children}</div>
     </div>
   );
 }

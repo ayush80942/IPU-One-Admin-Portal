@@ -1,44 +1,55 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { ChevronDown, ChevronRight, GraduationCap, Landmark, Plus, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronRight, GraduationCap, KeyRound, Landmark, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { useToast } from "../components/Toast";
-import { useIsSuperAdmin } from "../components/AuthGate";
+import { useAdminSession } from "../components/AuthGate";
 import PageHeader from "../components/PageHeader";
 import StatTile from "../components/StatTile";
 import EmptyState from "../components/EmptyState";
-import DetailDialog, { DetailField } from "../components/DetailDialog";
+import Pill from "../components/Pill";
+import { AdminForm, PasswordForm } from "../components/AdminFormDialog";
 import {
   fetchInstitutes,
   createInstitute,
-  updateInstitute,
   fetchCourses,
-  createCourse,
-  updateCourse,
-  Institute,
-  Course,
+  fetchAdmins,
+  deleteAdmin,
+  type Institute,
+  type Course,
+  type AdminUser,
 } from "../lib/api";
+import { instituteOptionsFrom } from "../lib/noticeTaxonomy";
 
-const TH = "px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide";
 const INPUT =
   "px-2.5 py-1.5 border border-border rounded-lg text-[13px] bg-surface focus:outline-none focus:border-primary";
 
-export default function AcademicStructurePage() {
+type AdminDialog = { kind: "create" } | { kind: "edit"; admin: AdminUser } | { kind: "password"; admin: AdminUser };
+
+export default function InstitutesPage() {
   const { toast } = useToast();
+  const router = useRouter();
+  const session = useAdminSession();
+
   const [institutes, setInstitutes] = useState<Institute[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingInstitute, setAddingInstitute] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [addingCourseFor, setAddingCourseFor] = useState<string | null>(null);
-  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const [adminDialog, setAdminDialog] = useState<AdminDialog | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [institutesData, coursesData] = await Promise.all([fetchInstitutes(), fetchCourses()]);
+      const [institutesData, coursesData, adminsData] = await Promise.all([
+        fetchInstitutes(),
+        fetchCourses(),
+        fetchAdmins(),
+      ]);
       setInstitutes(institutesData);
       setCourses(coursesData);
+      setAdmins(adminsData);
     } catch (err) {
       toast(`Failed to load: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
@@ -48,53 +59,61 @@ export default function AcademicStructurePage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Courses whose institute code doesn't match any known institute are kept out of the per-
-  // institute accordions and surfaced separately, since there's nowhere sensible to nest them.
-  const coursesByInstitute = useMemo(() => {
-    const map = new Map<string, Course[]>();
-    for (const course of courses) {
-      const key = course.instituteCode ?? "__none";
-      const list = map.get(key);
-      if (list) list.push(course);
-      else map.set(key, [course]);
+  const instituteOptions = useMemo(() => instituteOptionsFrom(institutes), [institutes]);
+
+  const courseCountByInstitute = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of courses) {
+      if (!c.instituteCode) continue;
+      map.set(c.instituteCode, (map.get(c.instituteCode) ?? 0) + 1);
     }
-    for (const list of map.values()) list.sort((a, b) => a.programCode.localeCompare(b.programCode));
     return map;
   }, [courses]);
 
-  const knownInstituteCodes = useMemo(() => new Set(institutes.map((i) => i.instituteCode)), [institutes]);
-  const orphanCourses = useMemo(
-    () => courses.filter((c) => !c.instituteCode || !knownInstituteCodes.has(c.instituteCode)),
-    [courses, knownInstituteCodes]
-  );
+  const adminCountByInstitute = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const a of admins) {
+      if (a.role !== "INSTITUTE_ADMIN") continue;
+      for (const i of a.institutes) {
+        map.set(i.instituteCode, (map.get(i.instituteCode) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [admins]);
+
+  const superAdmins = useMemo(() => admins.filter((a) => a.role === "SUPER_ADMIN"), [admins]);
 
   const sortedInstitutes = useMemo(
     () => [...institutes].sort((a, b) => a.instituteName.localeCompare(b.instituteName)),
     [institutes]
   );
 
-  const toggleExpanded = (code: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
-      return next;
-    });
-    setAddingCourseFor(null);
-  };
-
-  const coursesMissingDuration = courses.filter((c) => c.totalSemesters == null).length;
   const institutesMissingShortName = institutes.filter((i) => !i.shortName).length;
   const onboardedCount = institutes.filter((i) => i.onboarded).length;
+
+  const removeAdmin = async (admin: AdminUser) => {
+    if (!window.confirm(`Delete ${admin.displayName} (${admin.email})? They will lose access immediately.`)) {
+      return;
+    }
+    try {
+      await deleteAdmin(admin.id);
+      toast("Admin deleted", "success");
+      load();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to delete admin", "error");
+    }
+  };
+
+  const openInstitute = (code: string) => router.push(`/institutes/${encodeURIComponent(code)}`);
 
   return (
     <div>
       <PageHeader
-        title="Institutes & Courses"
-        subtitle="Codes and names stay in sync automatically from imported results. Add a school or programme here only when it has to exist before its first student imports — everything else is curation: short names, and the semester count that decides a student's “Pass Out” status."
+        title="Institutes"
+        subtitle="Codes and names stay in sync automatically from imported results. Click an institute to see its courses, admins, and enabled features — or add one below only when it has to exist before its first student imports."
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <StatTile
           value={loading ? "—" : institutes.length}
           label="Total Institutes"
@@ -112,24 +131,16 @@ export default function AcademicStructurePage() {
           color="teal"
           subLabel={!loading ? `of ${institutes.length} institutes` : undefined}
         />
-        <StatTile
-          value={loading ? "—" : courses.length}
-          label="Total Courses"
-          icon={GraduationCap}
-          color="teal"
-          subLabel={
-            !loading && coursesMissingDuration > 0 ? `${coursesMissingDuration} missing duration` : undefined
-          }
-        />
+        <StatTile value={loading ? "—" : courses.length} label="Total Courses" icon={GraduationCap} color="info" />
+        <StatTile value={loading ? "—" : superAdmins.length} label="Super Admins" icon={ShieldCheck} color="violet" />
       </div>
 
-      <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
+      {/* Institutes table */}
+      <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden mb-6">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-baseline gap-2">
-            <h2 className="text-[14px] font-bold text-primary">Institutes</h2>
-            <span className="text-[12px] text-muted tabular-nums">
-              {loading ? "—" : institutes.length}
-            </span>
+            <h2 className="text-[15px] font-bold text-primary">Institutes</h2>
+            <span className="text-[12px] text-muted tabular-nums">{loading ? "—" : institutes.length}</span>
           </div>
           <div className="flex items-center gap-4">
             <button
@@ -167,81 +178,172 @@ export default function AcademicStructurePage() {
             message="No institutes yet — they're created automatically as students import results, or add one above."
           />
         ) : (
-          <div>
-            {sortedInstitutes.map((institute) => (
-              <InstituteAccordionRow
-                key={institute.instituteCode}
-                institute={institute}
-                courses={coursesByInstitute.get(institute.instituteCode) ?? []}
-                isExpanded={expanded.has(institute.instituteCode)}
-                onToggle={() => toggleExpanded(institute.instituteCode)}
-                onSavedInstitute={(updated) =>
-                  setInstitutes((prev) =>
-                    prev.map((i) => (i.instituteCode === updated.instituteCode ? updated : i))
-                  )
-                }
-                onExpandCourse={setSelectedCourse}
-                onSavedCourse={(updated) =>
-                  setCourses((prev) => prev.map((c) => (c.programCode === updated.programCode ? updated : c)))
-                }
-                isAddingCourse={addingCourseFor === institute.instituteCode}
-                onToggleAddCourse={() =>
-                  setAddingCourseFor((prev) => (prev === institute.instituteCode ? null : institute.instituteCode))
-                }
-                onCourseCreated={(created) => {
-                  setCourses((prev) => [...prev, created]);
-                  setAddingCourseFor(null);
-                }}
-              />
-            ))}
-
-            {orphanCourses.length > 0 && (
-              <div>
-                <div className="px-6 py-3 border-t border-b border-border bg-background">
-                  <div className="text-[13px] font-bold text-foreground">Courses without a matched institute</div>
-                  <div className="text-[12px] text-muted">
-                    Their institute code doesn&apos;t match any institute above — likely a typo, or an institute
-                    record that hasn&apos;t been added yet.
-                  </div>
-                </div>
-                <div className="px-6 py-4">
-                  <CoursesMiniTable
-                    courses={orphanCourses}
-                    onExpand={setSelectedCourse}
-                    onSaved={(updated) =>
-                      setCourses((prev) => prev.map((c) => (c.programCode === updated.programCode ? updated : c)))
-                    }
-                  />
-                </div>
-              </div>
-            )}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13.5px]">
+              <thead>
+                <tr className="bg-primary-faint">
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Code</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Name</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Onboarded</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Courses</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Admins</th>
+                  <th className="px-4 py-3 w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {sortedInstitutes.map((institute) => (
+                  <tr
+                    key={institute.instituteCode}
+                    onClick={() => openInstitute(institute.instituteCode)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openInstitute(institute.instituteCode);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`View details for ${institute.instituteName}`}
+                    className="group hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer focus:outline-none focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
+                  >
+                    <td className="px-4 py-3 font-mono text-[13px]">{institute.instituteCode}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-foreground">{institute.instituteName}</div>
+                      {institute.shortName && (
+                        <div className="text-[11px] text-muted mt-0.5">{institute.shortName}</div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {institute.onboarded ? (
+                        <Pill color="text-teal" colorFaint="bg-teal-faint">Onboarded</Pill>
+                      ) : (
+                        <span className="text-muted text-[12px]">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">{courseCountByInstitute.get(institute.instituteCode) ?? 0}</td>
+                    <td className="px-4 py-3 tabular-nums">{adminCountByInstitute.get(institute.instituteCode) ?? 0}</td>
+                    <td className="px-4 py-3">
+                      <ChevronRight className="w-4 h-4 text-muted/40 group-hover:text-primary transition-colors" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
 
-      {selectedCourse && (
-        <DetailDialog
-          title={selectedCourse.programName}
-          subtitle={`Code: ${selectedCourse.programCode}`}
-          onClose={() => setSelectedCourse(null)}
-        >
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <DetailField label="Institute" value={selectedCourse.instituteName} />
-            <DetailField label="Institute Code" value={selectedCourse.instituteCode} />
-            <DetailField label="Short Name" value={selectedCourse.shortName} />
-            <DetailField label="Total Semesters" value={selectedCourse.totalSemesters} />
-            <DetailField label="Created" value={new Date(selectedCourse.createdAt).toLocaleString()} />
-            <DetailField label="Last Updated" value={new Date(selectedCourse.updatedAt).toLocaleString()} />
+      {/* Super Admins - the only admin accounts not tied to any one institute, so they live here
+          rather than on any institute's own page. */}
+      <div className="bg-surface border border-border rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-[15px] font-bold text-primary">Super Admins</h2>
+            <span className="text-[12px] text-muted tabular-nums">{loading ? "—" : superAdmins.length}</span>
           </div>
-        </DetailDialog>
+          <button
+            onClick={() => setAdminDialog({ kind: "create" })}
+            className="inline-flex items-center gap-1.5 text-[13px] font-bold text-primary hover:underline"
+          >
+            <Plus className="w-4 h-4" />
+            New super admin
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="p-6 space-y-3">
+            {[1, 2].map((i) => (
+              <div key={i} className="skeleton h-12 rounded-lg" />
+            ))}
+          </div>
+        ) : superAdmins.length === 0 ? (
+          <EmptyState icon={ShieldCheck} message="No super admin accounts yet." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13.5px]">
+              <thead>
+                <tr className="bg-primary-faint">
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Name</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Last sign-in</th>
+                  <th className="px-4 py-3 w-32" />
+                </tr>
+              </thead>
+              <tbody>
+                {superAdmins.map((admin) => {
+                  const isSelf = admin.id === session?.id;
+                  return (
+                    <tr key={admin.id} className="border-b border-border last:border-b-0 hover:bg-background transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-foreground">{admin.displayName}</span>
+                          {isSelf && <span className="text-[11px] font-normal text-muted">(you)</span>}
+                          {!admin.active && <Pill color="text-danger" colorFaint="bg-danger-faint">Disabled</Pill>}
+                        </div>
+                        <div className="text-[11px] text-muted mt-0.5">{admin.email}</div>
+                      </td>
+                      <td className="px-4 py-3 text-muted">
+                        {admin.lastLoginAt ? new Date(admin.lastLoginAt).toLocaleDateString() : "Never"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setAdminDialog({ kind: "edit", admin })}
+                            className="px-2.5 py-1.5 text-[12px] font-semibold text-primary hover:bg-primary-faint rounded-lg transition-colors"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setAdminDialog({ kind: "password", admin })}
+                            title="Set a new password"
+                            className="p-1.5 text-muted hover:text-primary hover:bg-primary-faint rounded-lg transition-colors"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => removeAdmin(admin)}
+                            disabled={isSelf}
+                            title={isSelf ? "You cannot delete your own account" : "Delete"}
+                            className="p-1.5 text-muted hover:text-danger hover:bg-danger-faint rounded-lg transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {adminDialog?.kind === "create" && (
+        <AdminForm
+          fixedRole="SUPER_ADMIN"
+          instituteOptions={instituteOptions}
+          onClose={() => setAdminDialog(null)}
+          onSaved={() => { setAdminDialog(null); load(); }}
+        />
+      )}
+
+      {adminDialog?.kind === "edit" && (
+        <AdminForm
+          admin={adminDialog.admin}
+          isSelf={adminDialog.admin.id === session?.id}
+          fixedRole="SUPER_ADMIN"
+          instituteOptions={instituteOptions}
+          onClose={() => setAdminDialog(null)}
+          onSaved={() => { setAdminDialog(null); load(); }}
+        />
+      )}
+
+      {adminDialog?.kind === "password" && (
+        <PasswordForm admin={adminDialog.admin} onClose={() => setAdminDialog(null)} onSaved={() => setAdminDialog(null)} />
       )}
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Institutes
-// ---------------------------------------------------------------------------
 
 function AddInstituteForm({
   onCancel,
@@ -317,364 +419,6 @@ function AddInstituteForm({
         </div>
       </div>
     </div>
-  );
-}
-
-function InstituteAccordionRow({
-  institute,
-  courses,
-  isExpanded,
-  onToggle,
-  onSavedInstitute,
-  onExpandCourse,
-  onSavedCourse,
-  isAddingCourse,
-  onToggleAddCourse,
-  onCourseCreated,
-}: {
-  institute: Institute;
-  courses: Course[];
-  isExpanded: boolean;
-  onToggle: () => void;
-  onSavedInstitute: (updated: Institute) => void;
-  onExpandCourse: (course: Course) => void;
-  onSavedCourse: (updated: Course) => void;
-  isAddingCourse: boolean;
-  onToggleAddCourse: () => void;
-  onCourseCreated: (created: Course) => void;
-}) {
-  const { toast } = useToast();
-  const isSuperAdmin = useIsSuperAdmin();
-  const [shortName, setShortName] = useState(institute.shortName ?? "");
-  const [saving, setSaving] = useState(false);
-  const [togglingOnboarded, setTogglingOnboarded] = useState(false);
-
-  const dirty = shortName !== (institute.shortName ?? "");
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const updated = await updateInstitute(institute.instituteCode, {
-        shortName: shortName.trim() === "" ? null : shortName.trim(),
-      });
-      onSavedInstitute(updated);
-      toast("Institute updated", "success");
-    } catch (err) {
-      toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleOnboarded = async (checked: boolean) => {
-    setTogglingOnboarded(true);
-    try {
-      const updated = await updateInstitute(institute.instituteCode, { onboarded: checked });
-      onSavedInstitute(updated);
-      toast(checked ? "Marked as onboarded" : "Marked as not onboarded", "success");
-    } catch (err) {
-      toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    } finally {
-      setTogglingOnboarded(false);
-    }
-  };
-
-  return (
-    <div className="border-b border-border last:border-b-0">
-      <div className="flex items-center gap-3 px-6 py-3 hover:bg-background transition-colors">
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-2.5 flex-1 min-w-0 text-left"
-          aria-expanded={isExpanded}
-        >
-          {isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-muted shrink-0" />
-          ) : (
-            <ChevronRight className="w-4 h-4 text-muted shrink-0" />
-          )}
-          <span className="font-mono text-[13px] text-muted shrink-0">{institute.instituteCode}</span>
-          <span className="font-semibold text-[13.5px] truncate">{institute.instituteName}</span>
-          <span className="text-[12px] text-muted tabular-nums shrink-0">
-            {courses.length} course{courses.length === 1 ? "" : "s"}
-          </span>
-        </button>
-        {isSuperAdmin ? (
-          <label
-            className="flex items-center gap-1.5 text-[12px] font-semibold text-muted shrink-0"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <input
-              type="checkbox"
-              checked={institute.onboarded}
-              disabled={togglingOnboarded}
-              onChange={(e) => toggleOnboarded(e.target.checked)}
-              className="w-4 h-4 accent-primary disabled:opacity-40"
-            />
-            Onboarded
-          </label>
-        ) : (
-          institute.onboarded && (
-            <span className="text-[11px] font-bold text-teal-600 bg-teal-50 px-2 py-1 rounded-full shrink-0">
-              Onboarded
-            </span>
-          )
-        )}
-        <input
-          type="text"
-          value={shortName}
-          onChange={(e) => setShortName(e.target.value)}
-          onClick={(e) => e.stopPropagation()}
-          placeholder="Short name"
-          className={`${INPUT} w-32 shrink-0`}
-        />
-        {dirty && (
-          <button
-            onClick={save}
-            disabled={saving}
-            className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50 shrink-0"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        )}
-      </div>
-
-      {isExpanded && (
-        <div className="bg-background border-t border-border">
-          <div className="px-6 py-3 flex items-center justify-between">
-            <span className="text-[12px] font-bold text-muted uppercase tracking-wide">Courses</span>
-            <button
-              onClick={onToggleAddCourse}
-              className="inline-flex items-center gap-1.5 text-[12.5px] font-bold text-primary hover:underline"
-            >
-              {isAddingCourse ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-              {isAddingCourse ? "Cancel" : "Add course"}
-            </button>
-          </div>
-
-          {isAddingCourse && (
-            <AddCourseForm institute={institute} onCancel={onToggleAddCourse} onCreated={onCourseCreated} />
-          )}
-
-          {courses.length === 0 ? (
-            <div className="px-6 pb-4 text-[13px] text-muted">
-              No courses yet for this institute — add the first one above.
-            </div>
-          ) : (
-            <div className="px-6 pb-4">
-              <CoursesMiniTable courses={courses} onExpand={onExpandCourse} onSaved={onSavedCourse} />
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Courses
-// ---------------------------------------------------------------------------
-
-function AddCourseForm({
-  institute,
-  onCancel,
-  onCreated,
-}: {
-  institute: Institute;
-  onCancel: () => void;
-  onCreated: (course: Course) => void;
-}) {
-  const { toast } = useToast();
-  const [code, setCode] = useState("");
-  const [name, setName] = useState("");
-  const [shortName, setShortName] = useState("");
-  const [totalSemesters, setTotalSemesters] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const submit = async () => {
-    setSaving(true);
-    try {
-      const created = await createCourse({
-        programCode: code.trim(),
-        programName: name.trim(),
-        instituteCode: institute.instituteCode,
-        shortName: shortName.trim() || null,
-        totalSemesters: totalSemesters.trim() === "" ? null : Number(totalSemesters),
-      });
-      toast(`Added ${created.programCode}`, "success");
-      onCreated(created);
-    } catch (err) {
-      toast(`Failed to add: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="px-6 py-4 border-y border-border bg-surface">
-      <div className="flex items-end gap-3 flex-wrap">
-        <Field label="Program code" hint="e.g. 031">
-          <input
-            type="text"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="031"
-            className={`${INPUT} font-mono w-28`}
-          />
-        </Field>
-        <Field label="Program name" hint="Imports will keep it in sync">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="BACHELOR OF TECHNOLOGY (ARTIFICIAL INTELLIGENCE AND DATA SCIENCE)"
-            className={`${INPUT} w-[26rem] max-w-full`}
-          />
-        </Field>
-        <Field label="Institute" hint={institute.instituteCode}>
-          <div className={`${INPUT} w-56 bg-background text-muted`}>
-            {institute.shortName ? `${institute.shortName} — ${institute.instituteName}` : institute.instituteName}
-          </div>
-        </Field>
-        <Field label="Short name" hint="Optional">
-          <input
-            type="text"
-            value={shortName}
-            onChange={(e) => setShortName(e.target.value)}
-            placeholder="B.Tech AI&DS"
-            className={`${INPUT} w-36`}
-          />
-        </Field>
-        <Field label="Semesters" hint="Optional">
-          <input
-            type="number"
-            min={1}
-            value={totalSemesters}
-            onChange={(e) => setTotalSemesters(e.target.value)}
-            placeholder="8"
-            className={`${INPUT} w-20`}
-          />
-        </Field>
-        <div className="flex items-center gap-3 pb-1.5">
-          <button
-            onClick={submit}
-            disabled={saving || !code.trim() || !name.trim()}
-            className="px-3.5 py-1.5 rounded-lg bg-primary text-white text-[13px] font-bold hover:bg-primary-light transition-colors disabled:opacity-40"
-          >
-            {saving ? "Adding…" : "Add course"}
-          </button>
-          <button onClick={onCancel} className="text-[12px] font-semibold text-muted hover:text-foreground">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CoursesMiniTable({
-  courses,
-  onExpand,
-  onSaved,
-}: {
-  courses: Course[];
-  onExpand: (course: Course) => void;
-  onSaved: (updated: Course) => void;
-}) {
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full text-[13.5px]">
-        <thead>
-          <tr className="bg-primary-faint">
-            <th className={TH}>Code</th>
-            <th className={TH}>Program</th>
-            <th className={TH}>Short Name</th>
-            <th className={TH}>Total Semesters</th>
-            <th className={TH}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {courses.map((course) => (
-            <CourseRow key={course.programCode} course={course} onExpand={onExpand} onSaved={onSaved} />
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function CourseRow({
-  course,
-  onExpand,
-  onSaved,
-}: {
-  course: Course;
-  onExpand: (course: Course) => void;
-  onSaved: (updated: Course) => void;
-}) {
-  const { toast } = useToast();
-  const [shortName, setShortName] = useState(course.shortName ?? "");
-  const [totalSemesters, setTotalSemesters] = useState(course.totalSemesters?.toString() ?? "");
-  const [saving, setSaving] = useState(false);
-
-  const dirty =
-    shortName !== (course.shortName ?? "") ||
-    totalSemesters !== (course.totalSemesters?.toString() ?? "");
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const updated = await updateCourse(course.programCode, {
-        shortName: shortName.trim() === "" ? null : shortName.trim(),
-        totalSemesters: totalSemesters.trim() === "" ? null : Number(totalSemesters),
-      });
-      onSaved(updated);
-      toast("Course updated", "success");
-    } catch (err) {
-      toast(`Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <tr className="hover:bg-background transition-colors border-b border-border last:border-b-0 bg-surface">
-      <td className="px-4 py-3 font-mono text-[13px]">{course.programCode}</td>
-      <td className="px-4 py-3 cursor-pointer group" onClick={() => onExpand(course)}>
-        <div className="font-semibold group-hover:text-primary group-hover:underline">
-          {course.programName}
-        </div>
-      </td>
-      <td className="px-4 py-3">
-        <input
-          type="text"
-          value={shortName}
-          onChange={(e) => setShortName(e.target.value)}
-          placeholder="e.g. B.Tech AI&DS"
-          className={`${INPUT} w-full`}
-        />
-      </td>
-      <td className="px-4 py-3">
-        <input
-          type="number"
-          min={1}
-          value={totalSemesters}
-          onChange={(e) => setTotalSemesters(e.target.value)}
-          placeholder="—"
-          className={`${INPUT} w-20`}
-        />
-      </td>
-      <td className="px-4 py-3">
-        {dirty && (
-          <button
-            onClick={save}
-            disabled={saving}
-            className="text-[12px] font-bold text-primary hover:underline disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        )}
-      </td>
-    </tr>
   );
 }
 
