@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { UserCog, Plus, Search, BadgeCheck, ChevronRight, X } from "lucide-react";
+import { UserCog, Plus, Search, BadgeCheck, ChevronRight, X, Copy, Check } from "lucide-react";
 import { useToast } from "../components/Toast";
 import { useAdminSession, useIsSuperAdmin } from "../components/AuthGate";
 import PageHeader from "../components/PageHeader";
@@ -314,6 +314,10 @@ function AddTeacherForm({
 }) {
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
+  // Set only once createTeacher returns — its response carries the plaintext default password
+  // exactly once (see TeacherDto.initialPassword), so the dialog switches to a "hand this to the
+  // teacher" screen instead of closing immediately like every other admin form here.
+  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
 
   const instituteOptions = useMemo(() => instituteOptionsFrom(institutes), [institutes]);
   const allowedInstituteOptions = lockedInstituteCodes
@@ -334,7 +338,7 @@ function AddTeacherForm({
     }
     setSubmitting(true);
     try {
-      await createTeacher({
+      const teacher = await createTeacher({
         email: email.trim(),
         name: name.trim(),
         title: title.trim() || null,
@@ -342,13 +346,21 @@ function AddTeacherForm({
         facultyCode: facultyCode.trim() || null,
       });
       toast("Teacher added");
-      onSaved();
+      if (teacher.initialPassword) {
+        setCreated({ email: teacher.email, password: teacher.initialPassword });
+      } else {
+        onSaved();
+      }
     } catch (err) {
       toast(`Failed to add teacher: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (created) {
+    return <InitialPasswordNotice email={created.email} password={created.password} onDone={onSaved} />;
+  }
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
@@ -381,5 +393,56 @@ function AddTeacherForm({
         </button>
       </div>
     </form>
+  );
+}
+
+/** Shown exactly once, right after createTeacher returns — the backend never hands this password
+ *  back again, so this is the only chance to copy it before closing the dialog. */
+function InitialPasswordNotice({ email, password, onDone }: { email: string; password: string; onDone: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(password);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can fail (permissions, insecure context) - the password stays visible
+      // on screen either way, so this is a nice-to-have, not a requirement.
+    }
+  };
+
+  return (
+    <div>
+      <p className="text-[13.5px] text-muted mb-4">
+        Teacher added. Share this default password with them — they sign in at the{" "}
+        <span className="font-semibold text-foreground">IPU One Teacher</span> portal and can
+        change it from there using an OTP sent to their email.
+      </p>
+      <div className="bg-background border border-border rounded-xl p-4 mb-5">
+        <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-1">Email</div>
+        <div className="text-[14px] font-medium text-foreground mb-3">{email}</div>
+        <div className="text-[11px] font-semibold text-muted uppercase tracking-wide mb-1">Default Password</div>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 text-[15px] font-bold text-primary tracking-wide bg-primary-faint rounded-lg px-3 py-2">
+            {password}
+          </code>
+          <button
+            type="button"
+            onClick={copy}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12.5px] font-semibold text-muted hover:text-primary hover:bg-primary-faint transition-colors"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+      </div>
+      <button
+        onClick={onDone}
+        className="w-full py-2.5 rounded-xl bg-primary text-white text-[14px] font-bold hover:bg-primary-light transition-colors"
+      >
+        Done
+      </button>
+    </div>
   );
 }

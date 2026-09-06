@@ -1306,6 +1306,14 @@ export interface TeacherDto {
   instituteCode: string | null;
   active: boolean;
   email: string;
+  /** False until the teacher changes their password in the teacher portal (see ipu_one_teacher) —
+   *  they're still on the default password below. */
+  passwordChanged: boolean;
+  /** False until the teacher completes the teacher portal's first-login profile-setup screen. */
+  profileComplete: boolean;
+  /** Only populated on the response to {@link createTeacher} — the plaintext default password,
+   *  shown once so it can be handed to the teacher. Never present on any other read. */
+  initialPassword?: string;
 }
 
 /** Creates the User row up front by email if none exists yet — this is how a teacher who hasn't
