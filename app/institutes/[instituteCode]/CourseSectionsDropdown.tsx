@@ -24,6 +24,10 @@ import {
 // sections together; see TimetablePage for the sibling "Timetable Slots" concern, which stayed
 // put. Deliberately optional — most programs/batches never split into subgroups, so this must
 // never read as a required setup step.
+//
+// A section/group only records its name and an optional expected headcount here — not every
+// batch divides serially by roll number, so membership itself is chosen by each student in the
+// app, not assigned from a range configured on this page.
 
 export function BatchYearSelect({
   course,
@@ -141,8 +145,8 @@ export function BatchYearSectionsPanel({
 
       <p className="text-[11.5px] text-muted mb-3">
         Optional — only add sections where this batch actually splits into subgroups (e.g. B1/B2) for classrooms
-        or labs. Who belongs to a section (and its lab groups) is decided by enrollment-number serial range, not a
-        roster.
+        or labs. Students pick which section (and lab group) they&apos;re in themselves from the app; capacity here
+        is just an expected headcount, not enforced.
       </p>
 
       {batchSections.length === 0 ? (
@@ -159,7 +163,7 @@ export function BatchYearSectionsPanel({
               >
                 <span className="font-semibold text-foreground">{s.sectionName}</span>
                 <span className="tabular-nums text-muted">
-                  {s.serialRangeStart}–{s.serialRangeEnd}
+                  {s.capacity != null ? `Capacity: ${s.capacity}` : "—"}
                 </span>
               </button>
             </li>
@@ -222,19 +226,12 @@ function SectionForm({
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [sectionName, setSectionName] = useState("");
-  const [serialRangeStart, setSerialRangeStart] = useState("");
-  const [serialRangeEnd, setSerialRangeEnd] = useState("");
+  const [capacity, setCapacity] = useState("");
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const start = Number(serialRangeStart);
-    const end = Number(serialRangeEnd);
-    if (!sectionName.trim() || !serialRangeStart || !serialRangeEnd) {
+    if (!sectionName.trim()) {
       toast("Please fill all required fields", "error");
-      return;
-    }
-    if (start > end) {
-      toast("Serial range start must not be greater than end", "error");
       return;
     }
     setSubmitting(true);
@@ -244,8 +241,7 @@ function SectionForm({
         programCode,
         batchYear,
         sectionName: sectionName.trim(),
-        serialRangeStart: start,
-        serialRangeEnd: end,
+        capacity: capacity.trim() === "" ? null : Number(capacity),
       });
       toast("Section created");
       onSaved();
@@ -267,30 +263,19 @@ function SectionForm({
           className={inputClass}
         />
       </Field>
-      <div />
-      <Field label="Serial Range Start *">
+      <Field label="Capacity">
         <input
           type="number"
           min={0}
-          value={serialRangeStart}
-          onChange={(e) => setSerialRangeStart(e.target.value)}
-          placeholder="e.g. 1"
-          className={inputClass}
-        />
-      </Field>
-      <Field label="Serial Range End *">
-        <input
-          type="number"
-          min={0}
-          value={serialRangeEnd}
-          onChange={(e) => setSerialRangeEnd(e.target.value)}
-          placeholder="e.g. 60"
+          value={capacity}
+          onChange={(e) => setCapacity(e.target.value)}
+          placeholder="Optional, e.g. 60"
           className={inputClass}
         />
       </Field>
       <p className="col-span-2 text-[11.5px] text-muted -mt-1">
-        A student falls in this section if their enrollment number&apos;s 3-digit serial component lies in this
-        range — read the actual ranges off the university&apos;s own class list or timetable PDF.
+        Students pick this section for themselves in the app — capacity is just an expected headcount and
+        isn&apos;t enforced.
       </p>
       <div className="col-span-2 flex justify-end mt-2">
         <button
@@ -316,8 +301,7 @@ function SectionDetail({
 }) {
   const { toast } = useToast();
   const [sectionName, setSectionName] = useState(section.sectionName);
-  const [serialRangeStart, setSerialRangeStart] = useState(String(section.serialRangeStart));
-  const [serialRangeEnd, setSerialRangeEnd] = useState(String(section.serialRangeEnd));
+  const [capacity, setCapacity] = useState(section.capacity != null ? String(section.capacity) : "");
   const [savingSection, setSavingSection] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -343,18 +327,15 @@ function SectionDetail({
 
   const handleSaveSection = async (e: FormEvent) => {
     e.preventDefault();
-    const start = Number(serialRangeStart);
-    const end = Number(serialRangeEnd);
-    if (!sectionName.trim() || !serialRangeStart || !serialRangeEnd || start > end) {
-      toast("Please check the section name and serial range", "error");
+    if (!sectionName.trim()) {
+      toast("Please check the section name", "error");
       return;
     }
     setSavingSection(true);
     try {
       const updated = await updateSection(section.id, {
         sectionName: sectionName.trim(),
-        serialRangeStart: start,
-        serialRangeEnd: end,
+        capacity: capacity.trim() === "" ? null : Number(capacity),
       });
       toast("Section updated");
       onSectionChanged(updated);
@@ -396,21 +377,13 @@ function SectionDetail({
           <input value={sectionName} onChange={(e) => setSectionName(e.target.value)} className={inputClass} />
         </Field>
         <div />
-        <Field label="Serial Range Start">
+        <Field label="Capacity">
           <input
             type="number"
             min={0}
-            value={serialRangeStart}
-            onChange={(e) => setSerialRangeStart(e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Serial Range End">
-          <input
-            type="number"
-            min={0}
-            value={serialRangeEnd}
-            onChange={(e) => setSerialRangeEnd(e.target.value)}
+            value={capacity}
+            onChange={(e) => setCapacity(e.target.value)}
+            placeholder="Optional"
             className={inputClass}
           />
         </Field>
@@ -455,7 +428,7 @@ function SectionDetail({
             <li key={g.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-background text-[13px]">
               <span className="font-semibold text-foreground">{g.groupName}</span>
               <span className="tabular-nums text-muted">
-                {g.serialRangeStart}–{g.serialRangeEnd}
+                {g.capacity != null ? `Capacity: ${g.capacity}` : "—"}
               </span>
               <div className="flex items-center gap-3 ml-auto">
                 <button onClick={() => setEditingGroup(g)} className="text-muted hover:text-primary">
@@ -513,24 +486,22 @@ function LabGroupForm({
   const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [groupName, setGroupName] = useState(existing?.groupName ?? "");
-  const [serialRangeStart, setSerialRangeStart] = useState(existing ? String(existing.serialRangeStart) : "");
-  const [serialRangeEnd, setSerialRangeEnd] = useState(existing ? String(existing.serialRangeEnd) : "");
+  const [capacity, setCapacity] = useState(existing?.capacity != null ? String(existing.capacity) : "");
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    const start = Number(serialRangeStart);
-    const end = Number(serialRangeEnd);
-    if (!groupName.trim() || !serialRangeStart || !serialRangeEnd || start > end) {
-      toast("Please check the group name and serial range", "error");
+    if (!groupName.trim()) {
+      toast("Please check the group name", "error");
       return;
     }
     setSubmitting(true);
     try {
+      const capacityValue = capacity.trim() === "" ? null : Number(capacity);
       if (existing) {
-        await updateLabGroup(existing.id, { groupName: groupName.trim(), serialRangeStart: start, serialRangeEnd: end });
+        await updateLabGroup(existing.id, { groupName: groupName.trim(), capacity: capacityValue });
         toast("Lab group updated");
       } else {
-        await createLabGroup(sectionId, { groupName: groupName.trim(), serialRangeStart: start, serialRangeEnd: end });
+        await createLabGroup(sectionId, { groupName: groupName.trim(), capacity: capacityValue });
         toast("Lab group added");
       }
       onSaved();
@@ -546,12 +517,10 @@ function LabGroupForm({
       <Field label="Group Name *">
         <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. A" className={inputClass} />
       </Field>
-      <Field label="Serial Range Start *">
-        <input type="number" min={0} value={serialRangeStart} onChange={(e) => setSerialRangeStart(e.target.value)} className={inputClass} />
+      <Field label="Capacity">
+        <input type="number" min={0} value={capacity} onChange={(e) => setCapacity(e.target.value)} placeholder="Optional" className={inputClass} />
       </Field>
-      <Field label="Serial Range End *">
-        <input type="number" min={0} value={serialRangeEnd} onChange={(e) => setSerialRangeEnd(e.target.value)} className={inputClass} />
-      </Field>
+      <div />
       <div className="col-span-3 flex justify-end gap-3">
         <button type="button" onClick={onCancel} className="px-4 py-2 rounded-[10px] text-[13px] font-semibold text-muted hover:text-foreground">
           Cancel

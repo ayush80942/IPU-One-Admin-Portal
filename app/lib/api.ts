@@ -1585,9 +1585,11 @@ export async function fetchFeedbackAnalyticsCsv(academicTerm?: string, programCo
 // ---------------------------------------------------------------------------
 // Sections & Lab Groups — a cohort subdivision (e.g. "B1") within one
 // institute+programme+batch year, and the lab sub-split within it (e.g. "A").
-// Membership is deterministic from the enrollment number's serial digits, not
-// an uploaded roster — see SectionResolutionService on the backend. Reads/
-// writes are narrowed server-side to the caller's own institute(s).
+// Membership is chosen by the student themselves (not every batch divides
+// serially by roll number), so a division here only records its own name and
+// an optional expected headcount — see SectionResolutionService on the
+// backend. Reads/writes are narrowed server-side to the caller's own
+// institute(s).
 // ---------------------------------------------------------------------------
 
 export interface SectionDto {
@@ -1596,8 +1598,7 @@ export interface SectionDto {
   programCode: string;
   batchYear: number;
   sectionName: string;
-  serialRangeStart: number;
-  serialRangeEnd: number;
+  capacity: number | null;
 }
 
 export interface CreateSectionRequest {
@@ -1605,34 +1606,29 @@ export interface CreateSectionRequest {
   programCode: string;
   batchYear: number;
   sectionName: string;
-  serialRangeStart: number;
-  serialRangeEnd: number;
+  capacity: number | null;
 }
 
 export interface UpdateSectionRequest {
   sectionName: string;
-  serialRangeStart: number;
-  serialRangeEnd: number;
+  capacity: number | null;
 }
 
 export interface LabGroupDto {
   id: string;
   sectionId: string;
   groupName: string;
-  serialRangeStart: number;
-  serialRangeEnd: number;
+  capacity: number | null;
 }
 
 export interface CreateLabGroupRequest {
   groupName: string;
-  serialRangeStart: number;
-  serialRangeEnd: number;
+  capacity: number | null;
 }
 
 export interface UpdateLabGroupRequest {
   groupName: string;
-  serialRangeStart: number;
-  serialRangeEnd: number;
+  capacity: number | null;
 }
 
 export async function fetchSections(): Promise<SectionDto[]> {
