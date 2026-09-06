@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, FormEvent } from "react";
-import { UserCog, Plus, Search, BadgeCheck, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { UserCog, Plus, Search, BadgeCheck, ChevronRight, X } from "lucide-react";
 import { useToast } from "../components/Toast";
 import { useAdminSession, useIsSuperAdmin } from "../components/AuthGate";
 import PageHeader from "../components/PageHeader";
@@ -9,15 +10,8 @@ import StatTile from "../components/StatTile";
 import EmptyState from "../components/EmptyState";
 import Pill from "../components/Pill";
 import Filter, { SELECT_CLASS } from "../components/Filter";
-import DetailDialog, { DetailField } from "../components/DetailDialog";
-import {
-  fetchTeachers,
-  createTeacher,
-  updateTeacher,
-  fetchInstitutes,
-  TeacherDto,
-  Institute,
-} from "../lib/api";
+import DetailDialog from "../components/DetailDialog";
+import { fetchTeachers, createTeacher, fetchInstitutes, TeacherDto, Institute } from "../lib/api";
 import { instituteOptionsFrom } from "../lib/noticeTaxonomy";
 
 const ALL = "";
@@ -32,8 +26,17 @@ function Field({ label, children, full }: { label: string; children: React.React
   );
 }
 
-function teacherLabel(t: TeacherDto): string {
+export function teacherLabel(t: TeacherDto): string {
   return t.title ? `${t.title} ${t.name}` : t.name;
+}
+
+function Avatar({ name, size = 38 }: { name: string; size?: number }) {
+  const style = { width: size, height: size, fontSize: size * 0.4 };
+  return (
+    <div style={style} className="rounded-full bg-primary-faint text-primary flex items-center justify-center font-bold shrink-0">
+      {name.trim().charAt(0).toUpperCase() || "?"}
+    </div>
+  );
 }
 
 // A dismissable summary of what's currently narrowing the table, matching the Students page.
@@ -51,6 +54,7 @@ function ActiveFilterChip({ label, onClear }: { label: string; onClear: () => vo
 
 export default function TeachersPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const session = useAdminSession();
   const isSuper = useIsSuperAdmin();
 
@@ -58,7 +62,6 @@ export default function TeachersPage() {
   const [institutes, setInstitutes] = useState<Institute[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [editing, setEditing] = useState<TeacherDto | null>(null);
 
   const [search, setSearch] = useState("");
   const [instituteCode, setInstituteCode] = useState(ALL);
@@ -110,6 +113,7 @@ export default function TeachersPage() {
       if (!q) return true;
       return (
         t.name.toLowerCase().includes(q) ||
+        t.email.toLowerCase().includes(q) ||
         (t.facultyCode ?? "").toLowerCase().includes(q) ||
         (instituteLabelOf(t.instituteCode) ?? "").toLowerCase().includes(q)
       );
@@ -176,7 +180,7 @@ export default function TeachersPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, faculty code, institute…"
+            placeholder="Search by name, email, faculty code, institute…"
             className="w-full pl-9 pr-4 py-2.5 border border-border rounded-lg text-[14px] bg-background focus:outline-none focus:border-primary transition-colors"
           />
         </div>
@@ -215,7 +219,7 @@ export default function TeachersPage() {
         {loading ? (
           <div className="p-6 space-y-3">
             {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="skeleton h-12 rounded-lg" />
+              <div key={i} className="skeleton h-14 rounded-lg" />
             ))}
           </div>
         ) : filtered.length === 0 ? (
@@ -236,21 +240,34 @@ export default function TeachersPage() {
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Faculty Code</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Institute</th>
                   <th className="px-4 py-3 text-left text-[11px] font-bold text-primary uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-3 w-8" />
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((t) => (
                   <tr
                     key={t.id}
-                    onClick={() => setEditing(t)}
-                    className="hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer"
+                    onClick={() => router.push(`/teachers/${t.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        router.push(`/teachers/${t.id}`);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`View details for ${teacherLabel(t)}`}
+                    className="group hover:bg-background transition-colors border-b border-border last:border-b-0 cursor-pointer focus:outline-none focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset"
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary-faint text-primary flex items-center justify-center font-bold shrink-0">
-                          {t.name.trim().charAt(0).toUpperCase()}
+                        <Avatar name={t.name} />
+                        <div className="min-w-0">
+                          <div className="font-semibold text-foreground truncate">{teacherLabel(t)}</div>
+                          <div className="text-[11px] text-muted mt-0.5 truncate max-w-[220px]" title={t.email}>
+                            {t.email}
+                          </div>
                         </div>
-                        <span className="font-semibold text-foreground">{teacherLabel(t)}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 font-mono text-[13px]">{t.facultyCode || "—"}</td>
@@ -261,6 +278,9 @@ export default function TeachersPage() {
                       ) : (
                         <Pill color="text-muted" colorFaint="bg-background">Inactive</Pill>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <ChevronRight className="w-4 h-4 text-muted/40 group-hover:text-primary transition-colors" />
                     </td>
                   </tr>
                 ))}
@@ -277,12 +297,6 @@ export default function TeachersPage() {
             lockedInstituteCodes={lockedInstituteCodes}
             onSaved={() => { setShowAddForm(false); load(); }}
           />
-        </DetailDialog>
-      )}
-
-      {editing && (
-        <DetailDialog title={teacherLabel(editing)} subtitle={instituteLabelOf(editing.instituteCode) ?? undefined} onClose={() => setEditing(null)}>
-          <EditTeacherForm teacher={editing} onSaved={() => { setEditing(null); load(); }} />
         </DetailDialog>
       )}
     </div>
@@ -364,72 +378,6 @@ function AddTeacherForm({
       <div className="col-span-2 flex justify-end mt-2">
         <button type="submit" disabled={submitting} className="px-5 py-2.5 rounded-[10px] text-[14px] font-semibold text-white bg-primary hover:bg-primary-light transition-colors disabled:opacity-60">
           {submitting ? "Adding…" : "Add Teacher"}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function EditTeacherForm({ teacher, onSaved }: { teacher: TeacherDto; onSaved: () => void }) {
-  const { toast } = useToast();
-  const [submitting, setSubmitting] = useState(false);
-  const [name, setName] = useState(teacher.name);
-  const [title, setTitle] = useState(teacher.title ?? "");
-  const [active, setActive] = useState(teacher.active);
-  const [facultyCode, setFacultyCode] = useState(teacher.facultyCode ?? "");
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) {
-      toast("Name is required", "error");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await updateTeacher(teacher.id, {
-        name: name.trim(),
-        title: title.trim() || null,
-        active,
-        facultyCode: facultyCode.trim() || null,
-      });
-      toast("Teacher updated");
-      onSaved();
-    } catch (err) {
-      toast(`Failed to update teacher: ${err instanceof Error ? err.message : "Unknown error"}`, "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      {/* Institute is set once at creation and isn't editable here — moving a teacher between
-          institutes isn't something this form supports; re-add the account under the right
-          institute instead. Faculty code, unlike institute, is correctable: an imported row can
-          carry the wrong value and there's no other way to fix it after the fact. */}
-      <DetailField label="Institute" value={teacher.instituteCode} />
-
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Title">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Dr., Prof." className={inputClass} />
-        </Field>
-        <Field label="Name *">
-          <input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
-        </Field>
-      </div>
-
-      <Field label="Faculty Code">
-        <input value={facultyCode} onChange={(e) => setFacultyCode(e.target.value)} placeholder="Optional" className={inputClass} />
-      </Field>
-
-      <label className="flex items-center gap-2 text-[13px] text-foreground">
-        <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="w-4 h-4" />
-        Active — inactive teachers stay in the catalog but drop out of the Feedback teacher picker
-      </label>
-
-      <div className="flex justify-end mt-2">
-        <button type="submit" disabled={submitting} className="px-5 py-2.5 rounded-[10px] text-[14px] font-semibold text-white bg-primary hover:bg-primary-light transition-colors disabled:opacity-60">
-          {submitting ? "Saving…" : "Save Changes"}
         </button>
       </div>
     </form>

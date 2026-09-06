@@ -1285,6 +1285,7 @@ export interface TeacherDto {
   title: string | null;
   instituteCode: string | null;
   active: boolean;
+  email: string;
 }
 
 /** Creates the User row up front by email if none exists yet — this is how a teacher who hasn't
